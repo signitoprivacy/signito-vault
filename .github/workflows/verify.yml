@@ -5,10 +5,15 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - 'Cargo.lock'
+
+permissions:
+  contents: write
 
 jobs:
-  verify:
-    name: Verify On-Chain Program
+  generate-and-verify:
+    name: Generate Cargo.lock and Verify Program
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -21,24 +26,35 @@ jobs:
           sudo mv solana-verify /usr/local/bin/solana-verify
           solana-verify --version
 
-      - name: Generate Cargo.lock inside Solana Docker image
+      - name: Generate Cargo.lock inside Solana verifiable build Docker image
         run: |
           DOCKER_IMAGE="solanafoundation/solana-verifiable-build@sha256:3ebe83c9a9e54b73fc2ef3b15bf4f634b8bf702f9d28366a74ff4f873f21f721"
-          docker pull $DOCKER_IMAGE
+          docker pull "$DOCKER_IMAGE"
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
-            $DOCKER_IMAGE \
+            "$DOCKER_IMAGE" \
             cargo generate-lockfile
-          echo "=== Generated Cargo.lock (first 10 lines) ==="
-          head -10 Cargo.lock
+          echo "=== Cargo.lock generated ==="
+          head -5 Cargo.lock
 
-      - name: Verify Program using current directory
-        working-directory: ${{ github.workspace }}
+      - name: Commit and push Cargo.lock
+        run: |
+          git config user.name "signitoprivacy"
+          git config user.email "283565983+signitoprivacy@users.noreply.github.com"
+          git add Cargo.lock
+          if git diff --staged --quiet; then
+            echo "Cargo.lock unchanged, skipping commit"
+          else
+            git commit -m "Update Cargo.lock for reproducible verification"
+            git push
+            echo "Cargo.lock committed and pushed"
+          fi
+
+      - name: Verify Program from repo
         run: |
           solana-verify verify-from-repo \
             --url https://api.mainnet-beta.solana.com \
             --program-id CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
             --skip-prompt \
-            --current-dir \
             https://github.com/signitoprivacy/signito-vault
