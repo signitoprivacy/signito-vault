@@ -1,0 +1,27 @@
+name: Verify Program
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  verify:
+    name: Verify On-Chain Program
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install solana-verify
+        run: |
+          curl -L https://github.com/solana-foundation/solana-verifiable-build/releases/download/v0.4.15/solana-verify-0.4.15-linux -o solana-verify
+          chmod +x solana-verify
+          sudo mv solana-verify /usr/local/bin/solana-verify
+          solana-verify --version
+
+      - name: Verify Program from Repo
+        run: |
+          solana-verify verify-from-repo \
+            --url https://api.mainnet-beta.solana.com \
+            --program-id CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
+            --skip-prompt \
+            https://github.com/signitoprivacy/signito-vault
