@@ -11,12 +11,27 @@ jobs:
     name: Verify On-Chain Program
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
       - name: Install solana-verify
         run: |
           curl -L https://github.com/solana-foundation/solana-verifiable-build/releases/download/v0.4.15/solana-verify-0.4.15-linux -o solana-verify
           chmod +x solana-verify
           sudo mv solana-verify /usr/local/bin/solana-verify
           solana-verify --version
+
+      - name: Generate Cargo.lock inside Solana Docker image
+        run: |
+          DOCKER_IMAGE="solanafoundation/solana-verifiable-build@sha256:3ebe83c9a9e54b73fc2ef3b15bf4f634b8bf702f9d28366a74ff4f873f21f721"
+          docker pull $DOCKER_IMAGE
+          docker run --rm \
+            -v "${{ github.workspace }}:/workdir" \
+            -w /workdir \
+            $DOCKER_IMAGE \
+            cargo generate-lockfile
+          echo "Generated Cargo.lock:"
+          head -5 Cargo.lock
 
       - name: Verify Program from Repo
         run: |
