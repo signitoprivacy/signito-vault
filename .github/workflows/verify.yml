@@ -43,8 +43,10 @@ jobs:
             "$DOCKER_IMAGE" \
             cargo generate-lockfile
           echo "=== Initial Cargo.lock generated ==="
+
           # Downgrade packages that use edition2024 or require rustc >= 1.85.
-          # Each was the latest version available before Rust 1.85 (Feb 2025).
+          # Pinned to latest versions available before Rust 1.85 (Feb 2025).
+
           # Step 2: proc-macro-crate 3.5.0 → 3.3.0
           # 3.5.0 → toml_edit 0.25.x → toml_datetime 1.1.x / toml_parser 1.1.x (edition2024)
           docker run --rm \
@@ -53,6 +55,7 @@ jobs:
             "$DOCKER_IMAGE" \
             cargo update --precise 3.3.0 "proc-macro-crate@3.5.0"
           echo "=== proc-macro-crate 3.5.0 → 3.3.0 ==="
+
           # Step 3: blake3 → 1.5.5
           # blake3 >= 1.6.0 → digest 0.11.x → block-buffer 0.12.0 (edition2024)
           docker run --rm \
@@ -61,14 +64,16 @@ jobs:
             "$DOCKER_IMAGE" \
             cargo update --precise 1.5.5 blake3
           echo "=== blake3 → 1.5.5 ==="
-          # Step 4: indexmap → 2.9.0
+
+          # Step 4: indexmap → 2.7.1 (released Jan 2025, latest before Feb 2025 build)
           # indexmap 2.10+ → hashbrown 0.17.x (edition2024)
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
             "$DOCKER_IMAGE" \
-            cargo update --precise 2.9.0 indexmap
-          echo "=== indexmap → 2.9.0 ==="
+            cargo update --precise 2.7.1 indexmap
+          echo "=== indexmap → 2.7.1 ==="
+
           # Step 5: unicode-segmentation → 1.12.0
           # 1.13.x requires rustc 1.85.0 (edition2024). 1.12.0 released 2024-09-13.
           docker run --rm \
@@ -77,6 +82,27 @@ jobs:
             "$DOCKER_IMAGE" \
             cargo update --precise 1.12.0 unicode-segmentation
           echo "=== unicode-segmentation → 1.12.0 ==="
+
+          # Step 6: solana-zk-token-sdk → 2.2.0
+          # 2.3.x versions have broken Pedersen/PedersenCommitment imports in with_fee.rs.
+          # 2.2.0 released Feb 15, 2025 — same day as Solana 2.3.0, compatible with build.
+          # spl-token-2022 4.0.1 requires ^2.0.0, so 2.2.0 satisfies the constraint.
+          docker run --rm \
+            -v "${{ github.workspace }}:/workdir" \
+            -w /workdir \
+            "$DOCKER_IMAGE" \
+            cargo update --precise 2.2.0 solana-zk-token-sdk
+          echo "=== solana-zk-token-sdk → 2.2.0 ==="
+
+          # Step 7: solana-zk-sdk → 2.2.0
+          # 2.3.x versions released June 2025+, too new for original Feb 2025 build.
+          # 2.2.0 released Feb 15, 2025. spl-token-2022 6.0.0 requires ^2.1.0, satisfied.
+          docker run --rm \
+            -v "${{ github.workspace }}:/workdir" \
+            -w /workdir \
+            "$DOCKER_IMAGE" \
+            cargo update --precise 2.2.0 solana-zk-sdk
+          echo "=== solana-zk-sdk → 2.2.0 ==="
 
       - name: Commit and push Cargo.lock
         run: |
