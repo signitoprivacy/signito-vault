@@ -43,8 +43,8 @@ jobs:
             "$DOCKER_IMAGE" \
             cargo generate-lockfile
           echo "=== Initial Cargo.lock generated ==="
-          # Step 2: Downgrade proc-macro-crate 3.5.0 → 3.3.0
-          # 3.5.0 pulls in toml_edit 0.25.x → toml_datetime 1.1.x/toml_parser 1.1.x/winnow 1.x (edition2024)
+          # Step 2: proc-macro-crate 3.5.0 → 3.3.0
+          # 3.5.0 → toml_edit 0.25.x → toml_datetime 1.1.x / toml_parser 1.1.x / winnow 1.x (edition2024)
           # 3.3.0 uses toml_edit 0.22.x — no edition2024 crates.
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
@@ -52,8 +52,8 @@ jobs:
             "$DOCKER_IMAGE" \
             cargo update --precise 3.3.0 "proc-macro-crate@3.5.0"
           echo "=== proc-macro-crate 3.5.0 → 3.3.0 ==="
-          # Step 3: Downgrade blake3 → 1.5.5
-          # blake3 >= 1.6.0 pulls in digest 0.11.x → block-buffer 0.12.0 (edition2024)
+          # Step 3: blake3 → 1.5.5
+          # blake3 >= 1.6.0 → digest 0.11.x → block-buffer 0.12.0 (edition2024)
           # blake3 1.5.5 (2024-11-27) uses digest 0.10.x — no edition2024.
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
@@ -61,18 +61,15 @@ jobs:
             "$DOCKER_IMAGE" \
             cargo update --precise 1.5.5 blake3
           echo "=== blake3 → 1.5.5 ==="
-          # Step 4: Downgrade indexmap → 2.9.0
-          # indexmap 2.14.0 (and 2.10+) pulls in hashbrown 0.17.x (edition2024)
+          # Step 4: indexmap → 2.9.0
+          # indexmap 2.10+ → hashbrown 0.17.x (edition2024)
           # indexmap 2.9.0 (2025-04-04) uses hashbrown ^0.15.0 — no edition2024.
-          # toml_edit 0.22.x is the only package needing indexmap in this tree.
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
             "$DOCKER_IMAGE" \
             cargo update --precise 2.9.0 indexmap
           echo "=== indexmap → 2.9.0 ==="
-          echo "=== Checking for remaining edition2024-risk packages ==="
-          grep -E 'version = "0\.12\.|version = "1\.1\.[0-9]+\+spec|version = "0\.17\.|version = "3\.(4|5)\.|version = "1\.[6-9]\.' Cargo.lock || echo "None found"
 
       - name: Commit and push Cargo.lock
         run: |
@@ -82,9 +79,8 @@ jobs:
           if git diff --staged --quiet; then
             echo "Cargo.lock unchanged, skipping commit"
           else
-            git pull --rebase
-            git add Cargo.lock
             git commit -m "Update Cargo.lock for reproducible verification"
+            git pull --rebase
             git push
             echo "Cargo.lock committed and pushed"
           fi
