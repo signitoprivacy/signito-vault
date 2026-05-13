@@ -30,23 +30,33 @@ jobs:
         run: |
           DOCKER_IMAGE="solanafoundation/solana-verifiable-build@sha256:3ebe83c9a9e54b73fc2ef3b15bf4f634b8bf702f9d28366a74ff4f873f21f721"
           docker pull "$DOCKER_IMAGE"
-          # Generate initial lockfile using Cargo 1.84.0 inside the Solana build image
+          # Step 1: Generate initial lockfile using Cargo 1.84.0 inside the Solana build image
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
             "$DOCKER_IMAGE" \
             cargo generate-lockfile
           echo "=== Initial Cargo.lock generated ==="
-          # Downgrade proc-macro-crate 3.5.0 → 3.3.0 to avoid edition2024 dependencies.
-          # 3.5.0 uses toml_edit ^0.25.x (pulls in toml_datetime/toml_parser with edition2024).
-          # 3.3.0 uses toml_edit ^0.22.x (no edition2024). Must disambiguate from 0.1.5.
+          # Step 2: Downgrade proc-macro-crate 3.5.0 → 3.3.0
+          # 3.5.0 pulls in toml_edit 0.25.x → toml_datetime/toml_parser/winnow with edition2024
+          # 3.3.0 uses toml_edit 0.22.x (no edition2024 crates)
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
             "$DOCKER_IMAGE" \
             cargo update --precise 3.3.0 "proc-macro-crate@3.5.0"
-          echo "=== proc-macro-crate pinned to 3.3.0 ==="
-          grep -A2 'name = "proc-macro-crate"' Cargo.lock
+          echo "=== proc-macro-crate 3.5.0 → 3.3.0 ==="
+          # Step 3: Downgrade blake3 to 1.5.5
+          # blake3 >= 1.6.0 pulls in digest 0.11.x → block-buffer 0.12.0 with edition2024
+          # blake3 1.5.5 (released 2024-11-27) uses digest 0.10.x (no edition2024)
+          docker run --rm \
+            -v "${{ github.workspace }}:/workdir" \
+            -w /workdir \
+            "$DOCKER_IMAGE" \
+            cargo update --precise 1.5.5 blake3
+          echo "=== blake3 → 1.5.5 ==="
+          echo "=== Final Cargo.lock packages with edition2024 risk ==="
+          grep -E '"blake3|"block-buffer|"proc-macro-crate|"toml_datetime|"toml_edit|"toml_parser"' Cargo.lock || true
 
       - name: Commit and push Cargo.lock
         run: |
