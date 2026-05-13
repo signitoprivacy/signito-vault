@@ -37,7 +37,8 @@ jobs:
           DOCKER_IMAGE="solanafoundation/solana-verifiable-build@sha256:3ebe83c9a9e54b73fc2ef3b15bf4f634b8bf702f9d28366a74ff4f873f21f721"
           docker pull "$DOCKER_IMAGE"
 
-          # Step 1: Generate initial lockfile with Cargo 1.84.0 inside the Solana build image
+          # Step 1: Generate initial lockfile (Cargo 1.84.0, resolves to latest crates).
+          # Current crates.io resolves to newer versions incompatible with rustc 1.84.1-dev.
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
@@ -46,6 +47,7 @@ jobs:
           echo "=== Initial Cargo.lock generated ==="
 
           # Step 2: proc-macro-crate 3.5.0 -> 3.3.0
+          # 3.5.0 pulls toml_parser 1.1.x which uses edition2024 (requires rustc >= 1.85).
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
@@ -54,6 +56,7 @@ jobs:
           echo "=== proc-macro-crate -> 3.3.0 ==="
 
           # Step 3: blake3 -> 1.5.5
+          # blake3 >= 1.6.0 pulls block-buffer 0.12.0 (edition2024, requires rustc >= 1.85).
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
@@ -61,7 +64,9 @@ jobs:
             cargo update --precise 1.5.5 blake3
           echo "=== blake3 -> 1.5.5 ==="
 
-          # Step 4: indexmap -> 2.7.1 (removes hashbrown 0.17.x)
+          # Step 4: indexmap -> 2.7.1
+          # indexmap >= 2.10 pulls hashbrown 0.17.x (edition2024, requires rustc >= 1.85).
+          # 2.7.1 was the latest as of January 2025.
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
@@ -70,6 +75,7 @@ jobs:
           echo "=== indexmap -> 2.7.1 ==="
 
           # Step 5: unicode-segmentation -> 1.12.0
+          # 1.13.x requires rustc >= 1.85 (edition2024).
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
@@ -77,28 +83,40 @@ jobs:
             cargo update --precise 1.12.0 unicode-segmentation
           echo "=== unicode-segmentation -> 1.12.0 ==="
 
-          # Step 6: Downgrade BOTH solana-zk-sdk AND solana-zk-token-sdk to 2.2.0 in ONE command.
-          # Must be done together atomically because:
-          #   solana-zk-sdk 2.3.x    requires solana-pubkey ^2.4.0
-          #   solana-zk-token-sdk 2.3.x requires solana-pubkey ^2.4.0
-          #   Both 2.2.0 versions    require solana-pubkey =2.2.1
-          # Updating one at a time causes a conflict - the other is still locked to 2.3.x
-          # while solana-pubkey is now 2.2.1. One invocation resolves both atomically.
+          # Step 6: solana-program -> 2.2.1 (cascade fixes the entire Solana 2.x ecosystem)
           #
-          # solana-zk-token-sdk 2.3.x compile bug:
-          #   COMMITMENT_MAX_FEE_BASIS_POINTS static is not inside #[cfg(not(target_os = "solana"))]
-          #   but uses PedersenCommitment/Pedersen types that are only imported in that cfg block.
-          #   Fails on SBF target. 2.2.0 uses lazy_static! with proper cfg gating - compiles fine.
+          # Timeline context:
+          #   anchor-lang 0.31.1   released 2025-04-20
+          #   solana-program 2.2.1 released 2025-02-12  <- latest when anchor 0.31.1 shipped
+          #   solana-program 2.3.0 released 2025-06-06  <- NOT available at anchor 0.31.1 release
+          #
+          # The initial cargo generate-lockfile (running now in 2026) resolves to
+          # solana-program 2.3.0 and solana-zk-sdk/zk-token-sdk 2.3.13, but these were
+          # not available when the program was originally built.
+          #
+          # Cascade effect of pinning solana-program to 2.2.1:
+          #   solana-program 2.2.1  -> solana-instruction ^2.2.1, solana-pubkey ^2.2.1
+          #   solana-zk-sdk 2.3.13  needs solana-pubkey ^2.4.0  -> incompatible -> downgraded
+          #   solana-zk-sdk 2.2.x   needs solana-pubkey =2.2.1  -> compatible
+          #   solana-zk-token-sdk 2.3.13 also downgraded to 2.2.x (same pubkey constraint)
+          #
+          # solana-zk-token-sdk 2.3.x compile bug (fixed by returning to 2.2.x):
+          #   COMMITMENT_MAX_FEE_BASIS_POINTS static is not gated #[cfg(not(target_os = "solana"))]
+          #   but references PedersenCommitment/Pedersen only imported in that cfg block.
+          #   Fails to compile for sbf-solana-solana target. 2.2.x uses lazy_static! with
+          #   correct cfg gating.
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
             "$DOCKER_IMAGE" \
-            cargo update --precise 2.2.0 solana-zk-sdk solana-zk-token-sdk
-          echo "=== solana-zk-sdk + solana-zk-token-sdk -> 2.2.0 ==="
+            cargo update --precise 2.2.1 solana-program
+          echo "=== solana-program -> 2.2.1 (cascades: instruction=2.2.1, pubkey=2.2.1, zk-sdk=2.2.x) ==="
 
-          echo "=== Key versions in final Cargo.lock ==="
-          grep -A1 'name = "solana-zk' Cargo.lock | grep version || true
-          grep -A1 'name = "solana-pubkey"' Cargo.lock | head -4 || true
+          echo "=== Key versions after all downgrades ==="
+          grep -A1 'name = "solana-program"' Cargo.lock | head -4
+          grep -A1 'name = "solana-pubkey"' Cargo.lock | head -4
+          grep -A1 'name = "solana-zk-sdk"' Cargo.lock | head -4
+          grep -A1 'name = "solana-zk-token-sdk"' Cargo.lock | head -4
 
       - name: Commit and push Cargo.lock
         run: |
