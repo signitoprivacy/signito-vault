@@ -26,16 +26,26 @@ jobs:
           sudo mv solana-verify /usr/local/bin/solana-verify
           solana-verify --version
 
-      - name: Generate Cargo.lock inside Solana verifiable build Docker image
+      - name: Generate and fix Cargo.lock inside Solana verifiable build Docker image
         run: |
           DOCKER_IMAGE="solanafoundation/solana-verifiable-build@sha256:3ebe83c9a9e54b73fc2ef3b15bf4f634b8bf702f9d28366a74ff4f873f21f721"
           docker pull "$DOCKER_IMAGE"
+          # Generate initial lockfile using Cargo 1.84.0 inside the Solana build image
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
             "$DOCKER_IMAGE" \
             cargo generate-lockfile
-          echo "=== Cargo.lock generated ==="
+          echo "=== Initial Cargo.lock generated ==="
+          # Downgrade proc-macro-crate from 3.5.0 to 3.3.0 to avoid edition2024 crates
+          # proc-macro-crate 3.3.0 uses toml_edit ^0.22.x (no edition2024)
+          # proc-macro-crate 3.5.0 uses toml_edit ^0.25.x (requires edition2024, breaks Cargo 1.84.0)
+          docker run --rm \
+            -v "${{ github.workspace }}:/workdir" \
+            -w /workdir \
+            "$DOCKER_IMAGE" \
+            cargo update --precise 3.3.0 proc-macro-crate
+          echo "=== proc-macro-crate pinned to 3.3.0 ==="
           head -5 Cargo.lock
 
       - name: Commit and push Cargo.lock
