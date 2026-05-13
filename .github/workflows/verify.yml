@@ -37,16 +37,16 @@ jobs:
             "$DOCKER_IMAGE" \
             cargo generate-lockfile
           echo "=== Initial Cargo.lock generated ==="
-          # Downgrade proc-macro-crate from 3.5.0 to 3.3.0 to avoid edition2024 crates
-          # proc-macro-crate 3.3.0 uses toml_edit ^0.22.x (no edition2024)
-          # proc-macro-crate 3.5.0 uses toml_edit ^0.25.x (requires edition2024, breaks Cargo 1.84.0)
+          # Downgrade proc-macro-crate 3.5.0 → 3.3.0 to avoid edition2024 dependencies.
+          # 3.5.0 uses toml_edit ^0.25.x (pulls in toml_datetime/toml_parser with edition2024).
+          # 3.3.0 uses toml_edit ^0.22.x (no edition2024). Must disambiguate from 0.1.5.
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
             "$DOCKER_IMAGE" \
-            cargo update --precise 3.3.0 proc-macro-crate
+            cargo update --precise 3.3.0 "proc-macro-crate@3.5.0"
           echo "=== proc-macro-crate pinned to 3.3.0 ==="
-          head -5 Cargo.lock
+          grep -A2 'name = "proc-macro-crate"' Cargo.lock
 
       - name: Commit and push Cargo.lock
         run: |
