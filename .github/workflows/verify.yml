@@ -30,13 +30,15 @@ jobs:
             -w /workdir \
             $DOCKER_IMAGE \
             cargo generate-lockfile
-          echo "Generated Cargo.lock:"
-          head -5 Cargo.lock
+          echo "=== Generated Cargo.lock (first 10 lines) ==="
+          head -10 Cargo.lock
 
-      - name: Verify Program from Repo
+      - name: Verify Program using current directory
+        working-directory: ${{ github.workspace }}
         run: |
           solana-verify verify-from-repo \
             --url https://api.mainnet-beta.solana.com \
             --program-id CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
             --skip-prompt \
+            --current-dir \
             https://github.com/signitoprivacy/signito-vault
