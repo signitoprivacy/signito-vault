@@ -26,21 +26,34 @@ jobs:
           sudo mv solana-verify /usr/local/bin/solana-verify
           solana-verify --version
 
-      - name: Build program with Docker
+      - name: Build and export program binary via solana-verify
+        continue-on-error: true
         run: |
-          docker pull solanafoundation/solana-verifiable-build:3.1.14
-          docker run --rm \
-            -v "${{ github.workspace }}:/build" \
-            solanafoundation/solana-verifiable-build:3.1.14 \
-            /bin/bash -c "cd /build && cargo build-sbf --manifest-path Cargo.toml"
-          echo "Built binary hash:"
-          sha256sum target/deploy/signito_vault.so
+          solana-verify verify-from-repo \
+            --url https://api.mainnet-beta.solana.com \
+            --program-id CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
+            --library-name signito_vault \
+            --base-image solanafoundation/solana-verifiable-build:3.1.14 \
+            --skip-prompt \
+            https://github.com/signitoprivacy/signito-vault || true
 
-      - name: Upload binary artifact
+      - name: Capture and upload binary from solana-verify temp dir
+        run: |
+          BINARY=$(find /tmp/solana-verify -name "signito_vault.so" 2>/dev/null | head -1)
+          if [ -z "$BINARY" ]; then
+            echo "ERROR: binary not found in solana-verify temp dir"
+            find /tmp/solana-verify -type f 2>/dev/null | head -20 || echo "No temp dir"
+            exit 1
+          fi
+          echo "Found binary: $BINARY"
+          sha256sum "$BINARY"
+          cp "$BINARY" signito_vault_verified.so
+
+      - name: Upload verified binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: signito-vault-program
-          path: target/deploy/signito_vault.so
+          name: signito-vault-program-verified
+          path: signito_vault_verified.so
           retention-days: 7
 
       - name: Verify Program from repo
