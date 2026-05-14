@@ -14,6 +14,10 @@ on:
         description: 'Specific commit SHA to build from (default: current HEAD)'
         required: false
         default: ''
+      use_cargo_lock:
+        description: 'Use Cargo.lock for reproducibility (true/false)'
+        required: false
+        default: 'false'
 
 jobs:
   build:
@@ -29,6 +33,13 @@ jobs:
         run: |
           echo "Building commit: $(git rev-parse HEAD)"
           git log -1 --oneline
+
+      - name: Remove Cargo.lock for fresh dependency resolution
+        if: ${{ github.event.inputs.use_cargo_lock != 'true' }}
+        run: |
+          echo "Removing Cargo.lock so build resolves deps fresh (same as OtterSec)"
+          rm -f Cargo.lock
+          ls -la
 
       - name: Install solana-verify
         run: cargo install solana-verify --locked
