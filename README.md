@@ -113,7 +113,7 @@ Vouchers are signed offline with Ed25519. The recipient only needs to scan a QR 
 |---|---|
 | Program | `CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX` |
 | Pool PDA | `ABgGyjfdqKQxq5d9T2UK78QUemf1RmQTYthRJkKSAm6H` |
-| sSOL Mint | `FwTmUeiXqXRPDnfcDSKQ9q6sjtcSTTqkSCVzTMJgZkNe` |
+| sSOL Mint | `4F6PXZ3dWX8BN517MtTDo47Yf9JUmeimZs48ncnqMoEr` |
 | Upgrade Authority | `BNzyXaTXopiCCffJ6Ee7XCvPiXwVxEVThteN8S7kBMge` |
 
 ---
