@@ -26,42 +26,22 @@ jobs:
           sudo mv solana-verify /usr/local/bin/solana-verify
           solana-verify --version
 
-      - name: Build and export program binary via solana-verify
-        continue-on-error: true
+      - name: Write keypair for registry upload
+        env:
+          SOLANA_DEPLOYER_KEYPAIR: ${{ secrets.SOLANA_DEPLOYER_KEYPAIR }}
         run: |
-          solana-verify verify-from-repo \
-            --url https://api.mainnet-beta.solana.com \
-            --program-id CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
-            --library-name signito_vault \
-            --base-image solanafoundation/solana-verifiable-build:3.1.14 \
-            --skip-prompt \
-            https://github.com/signitoprivacy/signito-vault || true
-
-      - name: Capture and upload binary from solana-verify temp dir
-        run: |
-          BINARY=$(find /tmp/solana-verify -name "signito_vault.so" 2>/dev/null | head -1)
-          if [ -z "$BINARY" ]; then
-            echo "ERROR: binary not found in solana-verify temp dir"
-            find /tmp/solana-verify -type f 2>/dev/null | head -20 || echo "No temp dir"
-            exit 1
-          fi
-          echo "Found binary: $BINARY"
-          sha256sum "$BINARY"
-          cp "$BINARY" signito_vault_verified.so
-
-      - name: Upload verified binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: signito-vault-program-verified
-          path: signito_vault_verified.so
-          retention-days: 7
+          echo "$SOLANA_DEPLOYER_KEYPAIR" > /tmp/deployer-keypair.json
+          chmod 600 /tmp/deployer-keypair.json
 
       - name: Verify Program from repo
+        env:
+          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
         run: |
           solana-verify verify-from-repo \
-            --url https://api.mainnet-beta.solana.com \
+            --url "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}" \
             --program-id CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
             --library-name signito_vault \
             --base-image solanafoundation/solana-verifiable-build:3.1.14 \
             --skip-prompt \
+            --keypair /tmp/deployer-keypair.json \
             https://github.com/signitoprivacy/signito-vault
