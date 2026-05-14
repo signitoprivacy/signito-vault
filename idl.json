@@ -1,0 +1,1818 @@
+{
+  "address": "CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX",
+  "metadata": {
+    "name": "signito_vault",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "Signito: non-custodial transaction privacy protocol on Solana. SafeVault (OTS), StealthSend (2-TX), AirSign (offline vouchers)."
+  },
+  "instructions": [
+    {
+      "name": "initialize_pool",
+      "discriminator": [
+        95,
+        180,
+        10,
+        172,
+        84,
+        174,
+        232,
+        40
+      ],
+      "docs": [
+        "One-time pool initialization: creates shared pool_pda and shared sSOL NonTransferable mint."
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "pool_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_stoken",
+          "writable": true,
+          "signer": true,
+          "docs": [
+            "Fresh keypair; initialized as shared sSOL NonTransferable Token-2022 mint."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program_2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "shield",
+      "discriminator": [
+        220,
+        198,
+        253,
+        246,
+        231,
+        84,
+        147,
+        98
+      ],
+      "docs": [
+        "Deposit SOL into the shared pool and mint sSOL to a fresh random token account. The stoken_ata is a fresh keypair (not derived from owner wallet) so subsequent StealthSend operations do not reveal the owner."
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "pool_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_stoken",
+          "writable": true,
+          "docs": [
+            "Shared sSOL mint, validated via pool_pda.mint_stoken."
+          ]
+        },
+        {
+          "name": "stoken_ata",
+          "writable": true,
+          "signer": true,
+          "docs": [
+            "Fresh keypair; created and initialized as sSOL token account in handler."
+          ]
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "stoken_ata"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program_2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "ShieldArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "deposit",
+      "discriminator": [
+        242,
+        35,
+        198,
+        137,
+        82,
+        225,
+        242,
+        182
+      ],
+      "docs": [
+        "Add more SOL to an existing user position and mint more sSOL."
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "pool_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_stoken",
+          "writable": true
+        },
+        {
+          "name": "stoken_ata",
+          "writable": true,
+          "docs": [
+            "User's existing stoken_ata from the initial shield."
+          ]
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "stoken_ata"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program_2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "DepositArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "refresh_ots",
+      "discriminator": [
+        250,
+        224,
+        222,
+        106,
+        60,
+        225,
+        207,
+        13
+      ],
+      "docs": [
+        "Reset the OTS chain when chain_depth is exhausted. Owner must sign."
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "stoken_ata",
+          "docs": [
+            "User's stoken_ata; used for PDA derivation and ownership check."
+          ]
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "stoken_ata"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "RefreshOtsArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "private_send",
+      "discriminator": [
+        219,
+        137,
+        15,
+        2,
+        228,
+        210,
+        142,
+        14
+      ],
+      "docs": [
+        "Legacy single-TX private transfer: OTS-verified sSOL burn + SOL sent to recipient. Owner wallet does NOT appear in accounts - only the random stoken_ata address is referenced."
+      ],
+      "accounts": [
+        {
+          "name": "relayer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "stoken_ata",
+          "writable": true,
+          "docs": [
+            "Random sSOL token account address. Owner wallet is not in this instruction."
+          ]
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "stoken_ata"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_stoken",
+          "writable": true
+        },
+        {
+          "name": "recipient",
+          "writable": true,
+          "docs": [
+            "SOL destination; any valid address including fresh wallets."
+          ]
+        },
+        {
+          "name": "token_program_2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "PrivateSendArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "burn_and_queue",
+      "discriminator": [
+        36,
+        15,
+        161,
+        137,
+        103,
+        7,
+        180,
+        200
+      ],
+      "docs": [
+        "TX1 of the 2-TX StealthSend flow. Burns sSOL (OTS-verified) without including the recipient on-chain. Signed by an ephemeral fresh_wallet. Owner and recipient wallet do NOT appear in accounts."
+      ],
+      "accounts": [
+        {
+          "name": "fresh_wallet",
+          "writable": true,
+          "signer": true,
+          "docs": [
+            "Ephemeral wallet funded by FunderPDA for this transaction only."
+          ]
+        },
+        {
+          "name": "stoken_ata",
+          "writable": true
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "stoken_ata"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_stoken",
+          "writable": true
+        },
+        {
+          "name": "token_program_2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "BurnAndQueueArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "process_queue",
+      "discriminator": [
+        178,
+        215,
+        43,
+        144,
+        239,
+        34,
+        170,
+        155
+      ],
+      "docs": [
+        "TX2 of the 2-TX StealthSend flow. Authorized relayer sends SOL from pool_pda to recipient. No account from TX1 appears here - zero on-chain link between burn and send."
+      ],
+      "accounts": [
+        {
+          "name": "relayer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "funder_pda",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  117,
+                  110,
+                  100,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "ProcessQueueArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "mint_airsign",
+      "discriminator": [
+        224,
+        19,
+        114,
+        221,
+        161,
+        80,
+        180,
+        229
+      ],
+      "docs": [
+        "AirSign: OTS-verified sSOL burn, SOL escrowed in AirsignEscrow PDA for offline voucher redemption."
+      ],
+      "accounts": [
+        {
+          "name": "relayer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "stoken_ata",
+          "writable": true
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "stoken_ata"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_stoken",
+          "writable": true
+        },
+        {
+          "name": "airsign_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  105,
+                  114,
+                  115,
+                  105,
+                  103,
+                  110,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "args.nonce_hash"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program_2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "MintAirsignArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "claim_airsign",
+      "discriminator": [
+        78,
+        222,
+        160,
+        46,
+        141,
+        85,
+        106,
+        125
+      ],
+      "docs": [
+        "AirSign claim: verify Ed25519 voucher signature on-chain, release escrowed SOL to recipient. No wallet connection required to claim."
+      ],
+      "accounts": [
+        {
+          "name": "relayer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "issuer",
+          "docs": [
+            "Wallet that issued the voucher; verified against escrow.issuer."
+          ]
+        },
+        {
+          "name": "airsign_escrow",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  105,
+                  114,
+                  115,
+                  105,
+                  103,
+                  110,
+                  95,
+                  101,
+                  115,
+                  99,
+                  114,
+                  111,
+                  119
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "args.nonce_hash"
+              }
+            ]
+          }
+        },
+        {
+          "name": "recipient",
+          "writable": true,
+          "docs": [
+            "Must match voucher_msg bytes; receives the escrowed SOL."
+          ]
+        },
+        {
+          "name": "instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "ClaimAirsignArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "close_account",
+      "discriminator": [
+        125,
+        255,
+        149,
+        14,
+        110,
+        34,
+        72,
+        24
+      ],
+      "docs": [
+        "Close an empty user_state PDA and return rent to owner. Requires zero sSOL balance."
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "stoken_ata"
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "stoken_ata"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_stoken_metadata",
+      "discriminator": [
+        143,
+        57,
+        222,
+        106,
+        227,
+        33,
+        217,
+        22
+      ],
+      "docs": [
+        "One-time admin: registers Metaplex token metadata for the sSOL mint."
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "pool_pda",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mint_stoken",
+          "writable": true
+        },
+        {
+          "name": "metadata",
+          "writable": true,
+          "docs": [
+            "Metaplex metadata PDA for the sSOL mint."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "mpl_token_metadata",
+          "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        },
+        {
+          "name": "sysvar_instructions",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_funder",
+      "discriminator": [
+        82,
+        193,
+        124,
+        222,
+        232,
+        146,
+        205,
+        235
+      ],
+      "docs": [
+        "One-time: create FunderPDA with admin and relayer pubkeys."
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "funder_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  117,
+                  110,
+                  100,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "InitFunderArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "deposit_funder",
+      "discriminator": [
+        59,
+        222,
+        250,
+        11,
+        6,
+        82,
+        42,
+        213
+      ],
+      "docs": [
+        "Deposit SOL into FunderPDA. Anyone can top it up."
+      ],
+      "accounts": [
+        {
+          "name": "depositor",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "funder_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  117,
+                  110,
+                  100,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "DepositFunderArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "withdraw_funder",
+      "discriminator": [
+        167,
+        186,
+        42,
+        141,
+        215,
+        139,
+        51,
+        98
+      ],
+      "docs": [
+        "Admin-only: withdraw SOL from FunderPDA."
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "funder_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  117,
+                  110,
+                  100,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "WithdrawFunderArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "fund_fresh_relayer",
+      "discriminator": [
+        17,
+        156,
+        36,
+        210,
+        56,
+        173,
+        143,
+        183
+      ],
+      "docs": [
+        "Relayer-only: send SOL from FunderPDA to an ephemeral fresh_wallet for TX1 gas."
+      ],
+      "accounts": [
+        {
+          "name": "relayer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "funder_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  117,
+                  110,
+                  100,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "fresh_wallet",
+          "writable": true,
+          "docs": [
+            "Ephemeral wallet to receive gas SOL."
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "FundFreshRelayerArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "set_relayer",
+      "discriminator": [
+        23,
+        243,
+        33,
+        88,
+        110,
+        84,
+        196,
+        37
+      ],
+      "docs": [
+        "Admin-only: rotate the authorized relayer pubkey in FunderPDA."
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true
+        },
+        {
+          "name": "funder_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  117,
+                  110,
+                  100,
+                  101,
+                  114
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "SetRelayerArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "rotate_mint",
+      "discriminator": [
+        113,
+        34,
+        165,
+        188,
+        41,
+        113,
+        124,
+        67
+      ],
+      "docs": [
+        "Deployer-only: create a new NonTransferable sSOL mint and update pool_pda to use it."
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true,
+          "docs": [
+            "Must be the deployer (upgrade authority)."
+          ]
+        },
+        {
+          "name": "pool_pda",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "new_mint",
+          "writable": true,
+          "signer": true,
+          "docs": [
+            "Fresh keypair; initialized as new NonTransferable sSOL mint."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "token_program_2022",
+          "address": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb"
+        }
+      ],
+      "args": []
+    }
+  ],
+  "accounts": [
+    {
+      "name": "PoolState",
+      "discriminator": [
+        247,
+        237,
+        227,
+        245,
+        215,
+        195,
+        222,
+        70
+      ]
+    },
+    {
+      "name": "UserState",
+      "discriminator": [
+        72,
+        177,
+        85,
+        249,
+        76,
+        167,
+        186,
+        126
+      ]
+    },
+    {
+      "name": "FunderState",
+      "discriminator": [
+        13,
+        5,
+        53,
+        120,
+        187,
+        25,
+        64,
+        159
+      ]
+    },
+    {
+      "name": "AirsignEscrow",
+      "discriminator": [
+        129,
+        230,
+        68,
+        17,
+        103,
+        25,
+        117,
+        59
+      ]
+    }
+  ],
+  "types": [
+    {
+      "name": "PoolState",
+      "docs": [
+        "Shared pool PDA: seeds = [b\"pool\"]. Holds ALL users' SOL. One address for the entire protocol."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint_stoken",
+            "docs": [
+              "Shared sSOL NonTransferable Token-2022 mint."
+            ],
+            "type": "publicKey"
+          },
+          {
+            "name": "total_deposited",
+            "docs": [
+              "Total lamports currently held in the pool."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserState",
+      "docs": [
+        "Per-user state PDA: seeds = [b\"user_state\", stoken_ata.key()]. Derived from a random stoken_ata address, NOT from the user's wallet, ensuring the wallet does not appear in private_send accounts."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "stoken_ata",
+            "docs": [
+              "Random sSOL token account address used as PDA seed."
+            ],
+            "type": "publicKey"
+          },
+          {
+            "name": "current_ots_hash",
+            "docs": [
+              "Current tip of the OTS hash chain. Each withdrawal reveals the preimage."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "chain_depth",
+            "docs": [
+              "Remaining OTS uses. Call refresh_ots when exhausted."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "deposited",
+            "docs": [
+              "Lamports attributed to this user position."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FunderState",
+      "docs": [
+        "FunderPDA: seeds = [b\"funder\"]. Holds operational SOL for funding ephemeral wallets used in TX1 of StealthSend."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "docs": [
+              "Can withdraw, deposit, and set relayer."
+            ],
+            "type": "publicKey"
+          },
+          {
+            "name": "relayer",
+            "docs": [
+              "Can call fund_fresh_relayer and process_queue."
+            ],
+            "type": "publicKey"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AirsignEscrow",
+      "docs": [
+        "AirsignEscrow PDA: seeds = [b\"airsign_escrow\", nonce_hash]. Created by mint_airsign, closed by claim_airsign."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "issuer",
+            "docs": [
+              "Wallet that created the voucher (stoken_ata authority)."
+            ],
+            "type": "publicKey"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Lamports held in escrow."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "nonce_hash",
+            "docs": [
+              "sha256(nonce) used as PDA seed; ties voucher to escrow."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ShieldArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ots_tip",
+            "docs": [
+              "Initial OTS hash chain tip: SHA-256^chain_depth(PBKDF2(vaultCode, wallet+gen, 100000))."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "chain_depth",
+            "docs": [
+              "Number of OTS uses (1-64)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Lamports to deposit."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "Additional lamports to deposit."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RefreshOtsArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "new_ots_tip",
+            "docs": [
+              "New OTS chain tip from next generation."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "new_chain_depth",
+            "docs": [
+              "New chain depth (1-64)."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PrivateSendArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ots_preimage",
+            "docs": [
+              "OTS preimage: SHA-256(ots_preimage) must equal current_ots_hash."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Lamports to send (0.15% relayer fee applied)."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "BurnAndQueueArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ots_preimage",
+            "docs": [
+              "OTS preimage for TX1. Recipient is NOT included on-chain."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Lamports to burn from sSOL position."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProcessQueueArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "docs": [
+              "Lamports to send from pool_pda to recipient."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MintAirsignArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "ots_preimage",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Lamports to escrow."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "nonce_hash",
+            "docs": [
+              "sha256(nonce) used as PDA seed for airsign_escrow."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimAirsignArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "nonce_hash",
+            "docs": [
+              "sha256(nonce from voucher) to derive the escrow PDA."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "voucher_msg",
+            "docs": [
+              "57-byte binary voucher: [0x53][amount u64 LE][recipient 32 bytes][nonce 16 bytes]."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                57
+              ]
+            }
+          },
+          {
+            "name": "sig",
+            "docs": [
+              "Ed25519 signature (64 bytes) by issuer over voucher_msg."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "InitFunderArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "relayer",
+            "docs": [
+              "Initial relayer pubkey."
+            ],
+            "type": "publicKey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositFunderArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawFunderArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FundFreshRelayerArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SetRelayerArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "new_relayer",
+            "type": "publicKey"
+          }
+        ]
+      }
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidOtsPreimage",
+      "msg": "OTS preimage does not match. Vault code incorrect or wrong withdrawal step."
+    },
+    {
+      "code": 6001,
+      "name": "VaultExhausted",
+      "msg": "OTS chain exhausted. Call refresh_ots with a new chain tip."
+    },
+    {
+      "code": 6002,
+      "name": "InsufficientFunds",
+      "msg": "Requested amount exceeds shielded balance."
+    },
+    {
+      "code": 6003,
+      "name": "InvalidAmount",
+      "msg": "Amount must be greater than zero."
+    },
+    {
+      "code": 6004,
+      "name": "InvalidVoucherSig",
+      "msg": "Ed25519 signature verification failed. Voucher is invalid."
+    },
+    {
+      "code": 6005,
+      "name": "VoucherExpired",
+      "msg": "This voucher has expired."
+    },
+    {
+      "code": 6006,
+      "name": "VoucherAlreadyClaimed",
+      "msg": "This voucher has already been claimed."
+    },
+    {
+      "code": 6007,
+      "name": "RecipientMismatch",
+      "msg": "This voucher was issued to a different address."
+    },
+    {
+      "code": 6008,
+      "name": "AccountNotEmpty",
+      "msg": "Account still holds funds. Withdraw all SOL before closing."
+    },
+    {
+      "code": 6009,
+      "name": "Unauthorized",
+      "msg": "Unauthorized. Delegate or ownership check failed."
+    },
+    {
+      "code": 6010,
+      "name": "Overflow",
+      "msg": "Arithmetic overflow."
+    },
+    {
+      "code": 6011,
+      "name": "PoolNotInitialized",
+      "msg": "Pool not initialized. Call initialize_pool first."
+    }
+  ]
+}
