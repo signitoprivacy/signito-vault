@@ -46,7 +46,6 @@ jobs:
           echo "=== Initial Cargo.lock generated ==="
 
           # Step 2: proc-macro-crate 3.5.0 -> 3.3.0
-          # 3.5.0 pulls toml_parser 1.1.x which uses edition2024 (requires rustc >= 1.85).
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
@@ -55,7 +54,6 @@ jobs:
           echo "=== proc-macro-crate -> 3.3.0 ==="
 
           # Step 3: blake3 -> 1.5.5
-          # blake3 >= 1.6.0 pulls block-buffer 0.12.0 (edition2024, requires rustc >= 1.85).
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
@@ -64,7 +62,6 @@ jobs:
           echo "=== blake3 -> 1.5.5 ==="
 
           # Step 4: indexmap -> 2.7.1
-          # indexmap >= 2.10 pulls hashbrown 0.17.x (edition2024, requires rustc >= 1.85).
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
@@ -73,7 +70,6 @@ jobs:
           echo "=== indexmap -> 2.7.1 ==="
 
           # Step 5: unicode-segmentation -> 1.12.0
-          # 1.13.x requires rustc >= 1.85 (edition2024).
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
@@ -82,16 +78,26 @@ jobs:
           echo "=== unicode-segmentation -> 1.12.0 ==="
 
           # Step 6: solana-program -> 2.2.1
-          # anchor-lang 0.31.1 (released 2025-04-20) predates solana-program 2.3.0 (2025-06-06).
-          # The original Cargo.lock would have resolved to solana-program 2.2.1 (2025-02-12).
-          # Downgrading from 2.3.0 to 2.2.1 removes the solana-instruction ^2.3.0 constraint
-          # that blocked downgrading the zk-sdk packages in the next step.
+          # anchor-lang 0.31.1 predates solana-program 2.3.0.
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
             "$DOCKER_IMAGE" \
             cargo update --precise 2.2.1 solana-program
           echo "=== solana-program -> 2.2.1 ==="
+
+          # Step 6.5: solana-sysvar -> 2.2.1
+          # After step 6: solana-program 2.2.1 specifies solana-sysvar "^2.2.1" which cargo
+          # leaves at 2.3.0 (still compatible with the range). But solana-sysvar 2.3.0 requires
+          # solana-instruction "^2.3.0" which conflicts with step 7: solana-zk-sdk 2.2.0
+          # requires solana-instruction "=2.2.1". Must downgrade sysvar explicitly so
+          # its solana-instruction constraint becomes "^2.2.1" (allows =2.2.1).
+          docker run --rm \
+            -v "${{ github.workspace }}:/workdir" \
+            -w /workdir \
+            "$DOCKER_IMAGE" \
+            cargo update --precise 2.2.1 solana-sysvar
+          echo "=== solana-sysvar -> 2.2.1 (removes instruction ^2.3.0 conflict) ==="
 
           # Step 7: solana-zk-sdk + solana-zk-token-sdk -> 2.2.0 (atomic, one command)
           #
@@ -101,48 +107,40 @@ jobs:
           #   Updating one at a time fails because the other still locks pubkey at ^2.4.0.
           #   Updating both in one cargo invocation resolves atomically.
           #
-          # WHY 2.2.x is required (two reasons):
-          #   1. std::sync::LazyLock: 2.3.x uses LazyLock in COMMITMENT_MAX_FEE_BASIS_POINTS
-          #      static, but this feature is NOT stabilized in the Solana verifiable build's
-          #      modified rustc (1.84.1-dev). 2.2.x uses lazy_static! which works.
-          #   2. Missing cfg gate: the LazyLock statics in 2.3.x are not gated with
-          #      #[cfg(not(target_os = "solana"))] but use PedersenCommitment/Pedersen
-          #      types that are only imported in that cfg block. Compile error on SBF target.
+          # WHY 2.2.x is required:
+          #   1. std::sync::LazyLock not stabilized in verifiable build rustc (1.84.1-dev).
+          #   2. LazyLock statics in 2.3.x not gated #[cfg(not(target_os = "solana"))].
           #
-          # ORDERING: Step 6 must run before Step 7.
-          #   After step 6: solana-program 2.2.1 requires solana-instruction ^2.2.1
-          #   (not ^2.3.0 anymore). This unblocks zk-sdk 2.2.0 which needs instruction =2.2.1.
-          #
-          # VERSION COMPATIBILITY:
-          #   spl-token-2022 6.0.0 requires solana-zk-sdk ^2.1.0    -> 2.2.0 satisfies
-          #   spl-pod 0.3.1         requires solana-zk-token-sdk ^2.0.3 -> 2.2.0 satisfies
-          #   solana-program 2.2.1  requires solana-pubkey ^2.2.1    -> 2.2.1 satisfies
+          # ORDERING: step 6.5 must run before step 7.
+          #   After step 6.5: sysvar 2.2.1 requires instruction "^2.2.1".
+          #   zk-sdk 2.2.0 pins instruction =2.2.1 which satisfies "^2.2.1".
           docker run --rm \
             -v "${{ github.workspace }}:/workdir" \
             -w /workdir \
             "$DOCKER_IMAGE" \
             cargo update --precise 2.2.0 solana-zk-sdk solana-zk-token-sdk
-          echo "=== solana-zk-sdk + solana-zk-token-sdk -> 2.2.0 (cascades pubkey=2.2.1, instruction=2.2.1) ==="
+          echo "=== solana-zk-sdk + solana-zk-token-sdk -> 2.2.0 ==="
 
           echo "=== Final Cargo.lock key versions ==="
           grep -A1 'name = "solana-program"' Cargo.lock | head -4
-          grep -A1 'name = "solana-pubkey"' Cargo.lock | head -4
+          grep -A1 'name = "solana-sysvar"' Cargo.lock | head -4
           grep -A1 'name = "solana-zk-sdk"' Cargo.lock | head -4
           grep -A1 'name = "solana-zk-token-sdk"' Cargo.lock | head -4
           grep -A1 'name = "solana-instruction"' Cargo.lock | head -4
 
-      - name: Commit and push Cargo.lock
+      - name: Update Cargo.lock
+        env:
+          GH_USER: signitoprivacy
+          GH_EMAIL: 283565983+signitoprivacy@users.noreply.github.com
         run: |
-          git config user.name "signitoprivacy"
-          git config user.email "283565983+signitoprivacy@users.noreply.github.com"
           git add Cargo.lock
           if git diff --staged --quiet; then
-            echo "Cargo.lock unchanged, skipping commit"
+            echo "Cargo.lock unchanged, skipping"
           else
-            git commit -m "Update Cargo.lock for reproducible verification"
+            git -c user.name="$GH_USER" -c user.email="$GH_EMAIL" commit -m "ci: update Cargo.lock for reproducible verification"
             git pull --rebase
             git push
-            echo "Cargo.lock committed and pushed"
+            echo "Cargo.lock pushed"
           fi
 
       - name: Verify Program from repo
