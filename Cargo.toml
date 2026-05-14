@@ -27,3 +27,9 @@ spl-token-2022 = { version = "6.0.0", features = ["no-entrypoint"] }
 spl-token-metadata-interface = { version = "0.4" }
 spl-associated-token-account = { version = "4.0.0", features = ["no-entrypoint"] }
 solana-security-txt = "1.1.1"
+# Explicit version pins for reproducible verifiable build.
+# solana-zk-token-sdk 2.3.x has a compile bug for the SBF target (missing imports
+# in with_fee.rs). solana-program 2.3.x requires solana-instruction ^2.3.0 which
+# conflicts with solana-zk-sdk 2.2.0 pin (=2.2.1). Both must be pinned together.
+solana-program = "=2.2.1"
+solana-zk-sdk = "=2.2.0"
