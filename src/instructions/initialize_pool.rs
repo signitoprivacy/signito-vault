@@ -5,7 +5,8 @@ use crate::constants::TOKEN_2022_ID;
 use crate::errors::SignitoError;
 use crate::state::PoolState;
 
-const MINT_LEN: usize = 82;
+// getMintLen([ExtensionType.NonTransferable]) = 170 (verified via @solana/spl-token)
+const MINT_LEN: usize = 170;
 
 #[derive(Accounts)]
 pub struct InitializePool<'info> {
@@ -61,13 +62,25 @@ pub fn handler(ctx: Context<InitializePool>) -> Result<()> {
         ],
     )?;
 
-    // mint_authority = freeze_authority = pool_pda
+    // Initialize NonTransferable extension BEFORE the mint itself.
+    // This makes sSOL soulbound: visible in Phantom/Solflare, but impossible to
+    // transfer or send to any wallet outside the Signito protocol.
+    invoke(
+        &spl_token_2022::instruction::initialize_non_transferable_mint(
+            &TOKEN_2022_ID,
+            ctx.accounts.mint_stoken.key,
+        )
+        .map_err(|_| error!(SignitoError::Overflow))?,
+        &[ctx.accounts.mint_stoken.to_account_info()],
+    )?;
+
+    // mint_authority = pool_pda; no freeze_authority needed (NonTransferable enforces immobility)
     invoke(
         &spl_token_2022::instruction::initialize_mint2(
             &TOKEN_2022_ID,
             ctx.accounts.mint_stoken.key,
             &pool_key,
-            Some(&pool_key),
+            None,
             9,
         )
         .map_err(|_| error!(SignitoError::Overflow))?,
@@ -75,7 +88,7 @@ pub fn handler(ctx: Context<InitializePool>) -> Result<()> {
     )?;
 
     msg!(
-        "Pool initialized. PDA: {}. Shared sSOL mint: {}",
+        "Pool initialized. PDA: {}. Shared sSOL mint (NonTransferable): {}",
         pool_key,
         ctx.accounts.mint_stoken.key()
     );

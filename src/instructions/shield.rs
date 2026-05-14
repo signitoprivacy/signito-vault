@@ -8,7 +8,12 @@ use crate::constants::TOKEN_2022_ID;
 use crate::errors::SignitoError;
 use crate::state::{PoolState, UserState};
 
-const TOKEN_ACCOUNT_LEN: usize = 165;
+// getAccountLen([ExtensionType.ImmutableOwner, ExtensionType.NonTransferableAccount]) = 174
+// NonTransferable mints require:
+//   - ImmutableOwner extension (must be initialized manually before initialize_account3)
+//   - NonTransferableAccount extension (added automatically by initialize_account3)
+// Both extensions must fit in the pre-allocated account, hence 174 bytes total.
+const TOKEN_ACCOUNT_LEN: usize = 174;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct ShieldArgs {
@@ -108,6 +113,17 @@ pub fn handler(ctx: Context<Shield>, args: ShieldArgs) -> Result<()> {
         ],
     )?;
 
+    // NonTransferable mints require ImmutableOwner on the token account.
+    // Must be called before initialize_account3.
+    invoke(
+        &spl_token_2022::instruction::initialize_immutable_owner(
+            &TOKEN_2022_ID,
+            ctx.accounts.stoken_ata.key,
+        )
+        .map_err(|_| error!(SignitoError::Overflow))?,
+        &[ctx.accounts.stoken_ata.to_account_info()],
+    )?;
+
     // authority = owner.key() so sSOL is visible in Phantom/Solflare
     invoke(
         &spl_token_2022::instruction::initialize_account3(
@@ -168,24 +184,6 @@ pub fn handler(ctx: Context<Shield>, args: ShieldArgs) -> Result<()> {
             ctx.accounts.pool_pda.to_account_info(),
             ctx.accounts.owner.to_account_info(),
         ],
-    )?;
-
-    // Freeze stoken_ata (pool_pda is freeze authority) -- prevents standard wallet transfers
-    invoke_signed(
-        &spl_token_2022::instruction::freeze_account(
-            &TOKEN_2022_ID,
-            ctx.accounts.stoken_ata.key,
-            ctx.accounts.mint_stoken.key,
-            &pool_key,
-            &[],
-        )
-        .map_err(|_| error!(SignitoError::Overflow))?,
-        &[
-            ctx.accounts.stoken_ata.to_account_info(),
-            ctx.accounts.mint_stoken.to_account_info(),
-            ctx.accounts.pool_pda.to_account_info(),
-        ],
-        pool_seeds,
     )?;
 
     msg!(

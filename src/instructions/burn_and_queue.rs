@@ -6,33 +6,33 @@ use crate::errors::SignitoError;
 use crate::state::{PoolState, UserState};
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
-pub struct PrivateSendArgs {
+pub struct BurnAndQueueArgs {
     pub ots_preimage: [u8; 32],
     pub amount: u64,
 }
 
-// PrivateSend: OTS-verified sSOL burn + SOL transfer from pool to recipient.
+// TX1 of the 2-TX StealthSend flow.
 //
-// PRIVACY GUARANTEE: owner's wallet address does NOT appear anywhere in this
-// instruction's accounts. Only the random stoken_ata address and user_state
-// (derived from stoken_ata, not from owner) are referenced.
+// Burns sSOL from the user's stoken_ata (OTS-verified) and reduces pool accounting.
+// Does NOT include a recipient address on-chain: the recipient is held off-chain
+// by the Signito relayer server and submitted in TX2 (process_queue).
 //
-// On-chain trace shows: [random_stoken_ata] burn + pool_pda -> recipient
-// Owner wallet is NOT in the instruction. To find the owner, an investigator
-// must separately look up the stoken_ata token account data (authority field).
+// Signed by the ephemeral fresh_wallet (funded by FunderPDA, discarded after TX1).
+// Owner wallet does NOT appear anywhere in this instruction's accounts.
+// Recipient wallet does NOT appear anywhere in this instruction's accounts.
 //
-// Relayer is the only signer -- no frontrunning possible (relayer key required).
+// On-chain trace from TX1: fresh_wallet -> stoken_ata -> user_state -> pool_pda
+// On-chain trace from TX2: relayer -> pool_pda -> recipient
+// No common account between TX1 and TX2.
 #[derive(Accounts)]
-pub struct PrivateSend<'info> {
+pub struct BurnAndQueue<'info> {
     #[account(mut)]
-    pub relayer: Signer<'info>,
+    pub fresh_wallet: Signer<'info>,
 
-    // Random address. Owner wallet NOT here.
-    /// CHECK: sSOL token account; pool_pda must be delegate (checked in handler)
+    /// CHECK: sSOL token account; pool_pda must be delegate (verified in handler)
     #[account(mut)]
     pub stoken_ata: UncheckedAccount<'info>,
 
-    // Derived from stoken_ata.key(), NOT from owner wallet pubkey.
     #[account(
         mut,
         seeds = [b"user_state", stoken_ata.key().as_ref()],
@@ -53,18 +53,12 @@ pub struct PrivateSend<'info> {
     #[account(mut, address = pool_pda.mint_stoken)]
     pub mint_stoken: UncheckedAccount<'info>,
 
-    /// CHECK: SOL destination -- any valid address including fresh wallets
-    #[account(mut)]
-    pub recipient: UncheckedAccount<'info>,
-
     /// CHECK: Token-2022 program
     #[account(address = TOKEN_2022_ID)]
     pub token_program_2022: UncheckedAccount<'info>,
-
-    pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<PrivateSend>, args: PrivateSendArgs) -> Result<()> {
+pub fn handler(ctx: Context<BurnAndQueue>, args: BurnAndQueueArgs) -> Result<()> {
     require!(args.amount > 0, SignitoError::InvalidAmount);
 
     let computed = hashv(&[args.ots_preimage.as_ref()]);
@@ -85,7 +79,7 @@ pub fn handler(ctx: Context<PrivateSend>, args: PrivateSendArgs) -> Result<()> {
             SignitoError::InsufficientFunds
         );
 
-        // Verify pool_pda is the delegate on stoken_ata
+        // Verify pool_pda is the delegate on stoken_ata.
         // Token account layout: delegate_option at [72..76], delegate pubkey at [76..108]
         let data = ctx.accounts.stoken_ata.data.borrow();
         require!(data.len() >= 108, SignitoError::Unauthorized);
@@ -125,8 +119,7 @@ pub fn handler(ctx: Context<PrivateSend>, args: PrivateSendArgs) -> Result<()> {
     }
 
     // Burn sSOL via pool_pda delegate authority.
-    // No freeze/thaw needed: the NonTransferable mint already prevents any transfer
-    // of sSOL via standard wallet tools at the protocol level.
+    // NonTransferable mint has no freeze authority -- no thaw needed.
     invoke_signed(
         &spl_token_2022::instruction::burn(
             &TOKEN_2022_ID,
@@ -145,44 +138,9 @@ pub fn handler(ctx: Context<PrivateSend>, args: PrivateSendArgs) -> Result<()> {
         pool_seeds,
     )?;
 
-    // 0.15% relayer fee (15 basis points). Fee stays with the relayer; remainder goes to recipient.
-    // fee = amount * 15 / 10000, rounded down. Minimum fee = 0 (tiny amounts).
-    let fee = args
-        .amount
-        .checked_mul(15)
-        .ok_or(SignitoError::Overflow)?
-        .checked_div(10_000)
-        .ok_or(SignitoError::Overflow)?;
-    let recipient_amount = args
-        .amount
-        .checked_sub(fee)
-        .ok_or(SignitoError::Overflow)?;
-
-    // Transfer SOL from pool_pda: recipient_amount to recipient, fee to relayer.
-    {
-        let pool_info = ctx.accounts.pool_pda.to_account_info();
-        let recipient_info = ctx.accounts.recipient.to_account_info();
-        let relayer_info = ctx.accounts.relayer.to_account_info();
-
-        **pool_info.try_borrow_mut_lamports()? = pool_info
-            .lamports()
-            .checked_sub(args.amount)
-            .ok_or(SignitoError::Overflow)?;
-        **recipient_info.try_borrow_mut_lamports()? = recipient_info
-            .lamports()
-            .checked_add(recipient_amount)
-            .ok_or(SignitoError::Overflow)?;
-        **relayer_info.try_borrow_mut_lamports()? = relayer_info
-            .lamports()
-            .checked_add(fee)
-            .ok_or(SignitoError::Overflow)?;
-    }
-
     msg!(
-        "PrivateSend: {} lamports -> {} (fee {} to relayer). OTS depth remaining: {}",
-        recipient_amount,
-        ctx.accounts.recipient.key,
-        fee,
+        "BurnAndQueue: {} lamports burned. OTS depth remaining: {}. Awaiting relay in TX2.",
+        args.amount,
         ctx.accounts.user_state.chain_depth,
     );
 
