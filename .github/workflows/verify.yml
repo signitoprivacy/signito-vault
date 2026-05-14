@@ -26,12 +26,21 @@ jobs:
           sudo mv solana-verify /usr/local/bin/solana-verify
           solana-verify --version
 
-      - name: Write keypair for registry upload
+      - name: Configure Solana keypair and CLI config
         env:
           SOLANA_DEPLOYER_KEYPAIR: ${{ secrets.SOLANA_DEPLOYER_KEYPAIR }}
+          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
         run: |
-          echo "$SOLANA_DEPLOYER_KEYPAIR" > /tmp/deployer-keypair.json
-          chmod 600 /tmp/deployer-keypair.json
+          mkdir -p ~/.config/solana/cli
+          echo "$SOLANA_DEPLOYER_KEYPAIR" > ~/.config/solana/id.json
+          chmod 600 ~/.config/solana/id.json
+          cat > ~/.config/solana/cli/config.yml << EOF
+          json_rpc_url: "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}"
+          websocket_url: ""
+          keypair_path: "/home/runner/.config/solana/id.json"
+          address_labels: {}
+          commitment: confirmed
+          EOF
 
       - name: Verify Program from repo
         env:
@@ -43,5 +52,5 @@ jobs:
             --library-name signito_vault \
             --base-image solanafoundation/solana-verifiable-build:3.1.14 \
             --skip-prompt \
-            --keypair /tmp/deployer-keypair.json \
+            --keypair /home/runner/.config/solana/id.json \
             https://github.com/signitoprivacy/signito-vault
