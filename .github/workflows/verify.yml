@@ -12,19 +12,11 @@ concurrency:
   group: verify
   cancel-in-progress: false
 
-permissions:
-  contents: write
-
 jobs:
-  generate-and-verify:
-    name: Generate Cargo.lock and Verify Program
+  verify:
+    name: Verify Program on Mainnet
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
       - name: Install solana-verify
         run: |
           curl -L https://github.com/solana-foundation/solana-verifiable-build/releases/download/v0.4.15/solana-verify-0.4.15-linux -o solana-verify
@@ -32,150 +24,12 @@ jobs:
           sudo mv solana-verify /usr/local/bin/solana-verify
           solana-verify --version
 
-      - name: Generate and fix Cargo.lock inside Solana verifiable build Docker image
-        run: |
-          DOCKER_IMAGE="solanafoundation/solana-verifiable-build@sha256:3ebe83c9a9e54b73fc2ef3b15bf4f634b8bf702f9d28366a74ff4f873f21f721"
-          docker pull "$DOCKER_IMAGE"
-
-          # Step 1: Generate initial lockfile (Cargo 1.84.0, resolves to latest crates).
-          docker run --rm \
-            -v "${{ github.workspace }}:/workdir" \
-            -w /workdir \
-            "$DOCKER_IMAGE" \
-            cargo generate-lockfile
-          echo "=== Initial Cargo.lock generated ==="
-
-          # Step 2: proc-macro-crate 3.5.0 -> 3.3.0
-          # 3.5.0 pulls toml_parser 1.1.x which uses edition2024 (requires rustc >= 1.85).
-          docker run --rm \
-            -v "${{ github.workspace }}:/workdir" \
-            -w /workdir \
-            "$DOCKER_IMAGE" \
-            cargo update --precise 3.3.0 "proc-macro-crate@3.5.0"
-          echo "=== proc-macro-crate -> 3.3.0 ==="
-
-          # Step 3: blake3 -> 1.5.5
-          # blake3 >= 1.6.0 pulls block-buffer 0.12.0 (edition2024, requires rustc >= 1.85).
-          docker run --rm \
-            -v "${{ github.workspace }}:/workdir" \
-            -w /workdir \
-            "$DOCKER_IMAGE" \
-            cargo update --precise 1.5.5 blake3
-          echo "=== blake3 -> 1.5.5 ==="
-
-          # Step 4: indexmap -> 2.7.1
-          # indexmap >= 2.10 pulls hashbrown 0.17.x (edition2024, requires rustc >= 1.85).
-          docker run --rm \
-            -v "${{ github.workspace }}:/workdir" \
-            -w /workdir \
-            "$DOCKER_IMAGE" \
-            cargo update --precise 2.7.1 indexmap
-          echo "=== indexmap -> 2.7.1 ==="
-
-          # Step 5: unicode-segmentation -> 1.12.0
-          # 1.13.x requires rustc >= 1.85 (edition2024).
-          docker run --rm \
-            -v "${{ github.workspace }}:/workdir" \
-            -w /workdir \
-            "$DOCKER_IMAGE" \
-            cargo update --precise 1.12.0 unicode-segmentation
-          echo "=== unicode-segmentation -> 1.12.0 ==="
-
-          # Step 6: solana-program -> 2.2.1
-          # anchor-lang 0.31.1 predates solana-program 2.3.0.
-          docker run --rm \
-            -v "${{ github.workspace }}:/workdir" \
-            -w /workdir \
-            "$DOCKER_IMAGE" \
-            cargo update --precise 2.2.1 solana-program
-          echo "=== solana-program -> 2.2.1 ==="
-
-          # Step 6.5: pin solana 2.x sub-crates to 2.2.1 (all-at-once, atomic)
-          #
-          # WHY this is needed:
-          #   solana-program 2.2.1 depends on many sub-crates via "^2.2.1".
-          #   Cargo resolves those to the LATEST compatible version (could be 2.2.x or 2.3.x).
-          #   Newer 2.2.x patch releases (e.g., solana-sysvar 2.3.0, solana-vote-interface 2.2.6)
-          #   have bumped their own dep on solana-instruction to "^2.3.0".
-          #   This conflicts with step 7 where solana-zk-sdk 2.2.0 requires "=2.2.1".
-          #
-          # STRATEGY: downgrade all known solana SDK sub-crates to 2.2.1 atomically.
-          #   Packages that were NOT bumped past 2.2.1 will be no-ops.
-          #   Packages that WERE bumped (sysvar, vote-interface, etc.) will be corrected.
-          #
-          # NOTE: solana-loader-v3-interface follows a different version scheme (3.x/5.x),
-          #   skip it here (step 6 already handles it via solana-program cascade).
-          docker run --rm \
-            -v "${{ github.workspace }}:/workdir" \
-            -w /workdir \
-            "$DOCKER_IMAGE" \
-            cargo update --precise 2.2.1 \
-              solana-account-info \
-              solana-clock \
-              solana-epoch-schedule \
-              solana-hash \
-              solana-instruction \
-              solana-msg \
-              solana-program-error \
-              solana-program-memory \
-              solana-pubkey \
-              solana-rent \
-              solana-sanitize \
-              solana-sdk-ids \
-              solana-secp256k1-recover \
-              solana-slot-hashes \
-              solana-sysvar \
-              solana-vote-interface
-          echo "=== solana SDK sub-crates -> 2.2.1 ==="
-
-          # Step 7: solana-zk-sdk + solana-zk-token-sdk -> 2.2.0 (atomic, one command)
-          #
-          # WHY both must be updated together:
-          #   Both 2.3.x versions require solana-pubkey ^2.4.0.
-          #   Both 2.2.0 versions require solana-pubkey =2.2.1.
-          #   Updating one at a time fails because the other still locks pubkey at ^2.4.0.
-          #   Updating both in one cargo invocation resolves atomically.
-          #
-          # WHY 2.2.x is required:
-          #   1. std::sync::LazyLock not stabilized in verifiable build rustc (1.84.1-dev).
-          #   2. LazyLock statics in 2.3.x not gated #[cfg(not(target_os = "solana"))].
-          #
-          # ORDERING: step 6.5 must run before step 7.
-          #   After step 6.5: all solana sub-crates are at 2.2.1 with instruction "^2.2.1".
-          #   zk-sdk 2.2.0 pins instruction =2.2.1 which satisfies "^2.2.1".
-          docker run --rm \
-            -v "${{ github.workspace }}:/workdir" \
-            -w /workdir \
-            "$DOCKER_IMAGE" \
-            cargo update --precise 2.2.0 solana-zk-sdk solana-zk-token-sdk
-          echo "=== solana-zk-sdk + solana-zk-token-sdk -> 2.2.0 ==="
-
-          echo "=== Final Cargo.lock key versions ==="
-          grep -A1 'name = "solana-program"' Cargo.lock | head -4
-          grep -A1 'name = "solana-sysvar"' Cargo.lock | head -4
-          grep -A1 'name = "solana-vote-interface"' Cargo.lock | head -4
-          grep -A1 'name = "solana-zk-sdk"' Cargo.lock | head -4
-          grep -A1 'name = "solana-instruction"' Cargo.lock | head -4
-
-      - name: Update Cargo.lock
-        env:
-          GH_USER: signitoprivacy
-          GH_EMAIL: 283565983+signitoprivacy@users.noreply.github.com
-        run: |
-          git add Cargo.lock
-          if git diff --staged --quiet; then
-            echo "Cargo.lock unchanged, skipping"
-          else
-            git -c user.name="$GH_USER" -c user.email="$GH_EMAIL" commit -m "ci: update Cargo.lock for reproducible verification"
-            git pull --rebase
-            git push
-            echo "Cargo.lock pushed"
-          fi
-
       - name: Verify Program from repo
         run: |
           solana-verify verify-from-repo \
             --url https://api.mainnet-beta.solana.com \
             --program-id CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
+            --library-name signito_vault \
+            --base-image solanafoundation/solana-verifiable-build:3.1.14 \
             --skip-prompt \
             https://github.com/signitoprivacy/signito-vault
