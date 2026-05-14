@@ -7,6 +7,7 @@ on:
       - main
     paths-ignore:
       - 'Cargo.lock'
+      - '.github/**'
 
 concurrency:
   group: verify
@@ -42,7 +43,7 @@ jobs:
           commitment: confirmed
           EOF
 
-      - name: Verify Program from repo
+      - name: Verify Program from repo and upload PDA
         env:
           HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
         run: |
@@ -54,3 +55,12 @@ jobs:
             --skip-prompt \
             --keypair /home/runner/.config/solana/id.json \
             https://github.com/signitoprivacy/signito-vault
+
+      - name: Submit remote verification job to otter.so
+        env:
+          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+        run: |
+          solana-verify remote submit-job \
+            --url "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}" \
+            --program-id CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
+            --uploader BNzyXaTXopiCCffJ6Ee7XCvPiXwVxEVThteN8S7kBMge
