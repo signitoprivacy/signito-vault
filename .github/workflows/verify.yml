@@ -13,16 +13,35 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
+  build-and-verify:
     name: Verify Program on Mainnet
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Install solana-verify
         run: |
           curl -L https://github.com/solana-foundation/solana-verifiable-build/releases/download/v0.4.15/solana-verify-0.4.15-linux -o solana-verify
           chmod +x solana-verify
           sudo mv solana-verify /usr/local/bin/solana-verify
           solana-verify --version
+
+      - name: Build program with Docker
+        run: |
+          docker pull solanafoundation/solana-verifiable-build:3.1.14
+          docker run --rm \
+            -v "${{ github.workspace }}:/build" \
+            solanafoundation/solana-verifiable-build:3.1.14 \
+            /bin/bash -c "cd /build && cargo build-sbf --manifest-path Cargo.toml"
+          echo "Built binary hash:"
+          sha256sum target/deploy/signito_vault.so
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: signito-vault-program
+          path: target/deploy/signito_vault.so
+          retention-days: 7
 
       - name: Verify Program from repo
         run: |
