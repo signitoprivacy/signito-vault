@@ -8,8 +8,11 @@ use crate::state::PoolState;
 // Only the deployer (upgrade authority) can rotate the mint.
 const DEPLOYER: Pubkey = pubkey!("BNzyXaTXopiCCffJ6Ee7XCvPiXwVxEVThteN8S7kBMge");
 
-// getMintLen([ExtensionType.NonTransferable]) = 170 (verified via @solana/spl-token)
-const MINT_LEN: usize = 170;
+// getMintLen([ExtensionType.NonTransferable, ExtensionType.PermanentDelegate]) = 206
+// NonTransferable(9): 4 bytes TLV header (no data)
+// PermanentDelegate(12): 4 bytes TLV header + 32 bytes delegate pubkey = 36 bytes
+// Base 170 (NonTransferable alone) + 36 (PermanentDelegate) = 206
+const MINT_LEN: usize = 206;
 
 #[derive(Accounts)]
 pub struct RotateMint<'info> {
@@ -57,12 +60,26 @@ pub fn handler(ctx: Context<RotateMint>) -> Result<()> {
         ],
     )?;
 
-    // Initialize NonTransferable extension BEFORE the mint.
+    // Initialize NonTransferable extension (type=9) before PermanentDelegate (type=12).
+    // Extensions must be initialized in ascending type order.
     // sSOL becomes soulbound: shows in Phantom, cannot be sent to any wallet.
     invoke(
         &spl_token_2022::instruction::initialize_non_transferable_mint(
             &TOKEN_2022_ID,
             ctx.accounts.new_mint.key,
+        )
+        .map_err(|_| error!(SignitoError::Overflow))?,
+        &[ctx.accounts.new_mint.to_account_info()],
+    )?;
+
+    // Initialize PermanentDelegate (type=12) with pool_pda as delegate.
+    // This allows pool_pda to burn sSOL from any token account without the
+    // account owner's signature. Required for burn_and_queue and private_send.
+    invoke(
+        &spl_token_2022::instruction::initialize_permanent_delegate(
+            &TOKEN_2022_ID,
+            ctx.accounts.new_mint.key,
+            &pool_key,
         )
         .map_err(|_| error!(SignitoError::Overflow))?,
         &[ctx.accounts.new_mint.to_account_info()],
