@@ -8,11 +8,14 @@ use crate::constants::TOKEN_2022_ID;
 use crate::errors::SignitoError;
 use crate::state::{PoolState, UserState};
 
-// getAccountLen([ExtensionType.ImmutableOwner, ExtensionType.NonTransferableAccount]) = 174
-// NonTransferable mints require:
-//   - ImmutableOwner extension (must be initialized manually before initialize_account3)
-//   - NonTransferableAccount extension (added automatically by initialize_account3)
-// Both extensions must fit in the pre-allocated account, hence 174 bytes total.
+// Token account size for:
+//   ImmutableOwner         (0 bytes data + 4 TLV header = 4)  type=7
+//   NonTransferableAccount (0 bytes data + 4 TLV header = 4, added auto by init_account3) type=13
+// Base account: 165 bytes + 1 account_type byte = 166
+// Total: 166 + 4 + 4 = 174
+//
+// Note: PermanentDelegate is a MINT-level extension (type=12) set on the mint by rotate_mint.
+// It must NOT be set on individual token accounts.
 const TOKEN_ACCOUNT_LEN: usize = 174;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
@@ -24,16 +27,31 @@ pub struct ShieldArgs {
 
 // Shield: deposit SOL into the shared pool and mint sSOL to user's token account.
 //
-// stoken_ata is a FRESH KEYPAIR (random address, not derived from owner wallet).
-// user_state is derived from stoken_ata.key(), NOT from owner.key().
-// This means private_send transactions will not include owner.key() in their accounts.
+// TWO-ACTOR DESIGN (no Phantom unknown-program warning):
+//   owner         = freshWallet (server-controlled ephemeral keypair)
+//                   Pays SOL: shield amount + account rents.
+//                   Never held by the user. Phantom never signs a program ix.
+//   display_owner = user's real connected wallet (NON-signer, readonly)
+//                   Set as stoken_ata authority so sSOL appears in Phantom/Solflare.
 //
-// The stoken_ata authority is set to owner.key() so it shows up in Phantom/Solflare.
-// pool_pda is approved as delegate so it can burn sSOL in private_send without owner sig.
+// User only signs a plain SystemProgram.transfer to freshWallet (shown in Phantom
+// as "Send X SOL"). Server then calls this instruction with freshWallet signing.
+//
+// stoken_ata is a FRESH KEYPAIR (random address, NOT wallet-derived).
+// user_state PDA is derived from stoken_ata.key(), NOT from any wallet pubkey.
+//
+// pool_pda is set as PermanentDelegate on stoken_ata so it can burn sSOL in
+// burn_and_queue / private_send without any wallet signature, and without
+// needing a standard approve (which would require the authority to sign).
 #[derive(Accounts)]
 pub struct Shield<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
+
+    /// CHECK: user's real wallet address. Set as stoken_ata authority so sSOL
+    /// appears in Phantom/Solflare under the user's wallet. NOT a signer --
+    /// the server-controlled freshWallet (owner) pays all SOL.
+    pub display_owner: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -98,6 +116,7 @@ pub fn handler(ctx: Context<Shield>, args: ShieldArgs) -> Result<()> {
     let rent = Rent::get()?;
     let account_lamports = rent.minimum_balance(TOKEN_ACCOUNT_LEN);
 
+    // 1. Allocate space for stoken_ata (owner = freshWallet pays rent)
     invoke(
         &system_instruction::create_account(
             ctx.accounts.owner.key,
@@ -113,8 +132,7 @@ pub fn handler(ctx: Context<Shield>, args: ShieldArgs) -> Result<()> {
         ],
     )?;
 
-    // NonTransferable mints require ImmutableOwner on the token account.
-    // Must be called before initialize_account3.
+    // 2. Register ImmutableOwner extension (must be before initialize_account3)
     invoke(
         &spl_token_2022::instruction::initialize_immutable_owner(
             &TOKEN_2022_ID,
@@ -124,13 +142,15 @@ pub fn handler(ctx: Context<Shield>, args: ShieldArgs) -> Result<()> {
         &[ctx.accounts.stoken_ata.to_account_info()],
     )?;
 
-    // authority = owner.key() so sSOL is visible in Phantom/Solflare
+    // 3. Initialize the token account.
+    //    authority = display_owner.key() so sSOL is visible in Phantom/Solflare
+    //    under the user's real wallet address, even though display_owner did not sign.
     invoke(
         &spl_token_2022::instruction::initialize_account3(
             &TOKEN_2022_ID,
             ctx.accounts.stoken_ata.key,
             ctx.accounts.mint_stoken.key,
-            ctx.accounts.owner.key,
+            ctx.accounts.display_owner.key,
         )
         .map_err(|_| error!(SignitoError::Overflow))?,
         &[
@@ -139,7 +159,7 @@ pub fn handler(ctx: Context<Shield>, args: ShieldArgs) -> Result<()> {
         ],
     )?;
 
-    // Transfer SOL from owner to pool_pda
+    // 5. Transfer SOL from owner (freshWallet) to pool_pda
     invoke(
         &system_instruction::transfer(ctx.accounts.owner.key, &pool_key, args.amount),
         &[
@@ -149,7 +169,7 @@ pub fn handler(ctx: Context<Shield>, args: ShieldArgs) -> Result<()> {
         ],
     )?;
 
-    // Mint sSOL (pool_pda is mint authority)
+    // 6. Mint sSOL to stoken_ata (pool_pda is mint authority, signs via PDA seeds)
     invoke_signed(
         &spl_token_2022::instruction::mint_to(
             &TOKEN_2022_ID,
@@ -168,29 +188,15 @@ pub fn handler(ctx: Context<Shield>, args: ShieldArgs) -> Result<()> {
         pool_seeds,
     )?;
 
-    // Approve pool_pda as delegate so it can burn sSOL in private_send without owner sig
-    invoke(
-        &spl_token_2022::instruction::approve(
-            &TOKEN_2022_ID,
-            ctx.accounts.stoken_ata.key,
-            &pool_key,
-            ctx.accounts.owner.key,
-            &[],
-            u64::MAX,
-        )
-        .map_err(|_| error!(SignitoError::Overflow))?,
-        &[
-            ctx.accounts.stoken_ata.to_account_info(),
-            ctx.accounts.pool_pda.to_account_info(),
-            ctx.accounts.owner.to_account_info(),
-        ],
-    )?;
+    // No approve needed: pool_pda is PermanentDelegate (set in step 3) and can burn
+    // sSOL at any time without the authority (display_owner) signing anything.
 
     msg!(
-        "Shield: {} lamports into pool. stoken_ata: {}. OTS depth: {}",
+        "Shield: {} lamports. stoken_ata: {}. display_owner: {}. OTS depth: {}",
         args.amount,
         ctx.accounts.stoken_ata.key(),
-        args.chain_depth
+        ctx.accounts.display_owner.key(),
+        args.chain_depth,
     );
 
     Ok(())
