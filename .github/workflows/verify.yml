@@ -34,10 +34,10 @@ jobs:
       - name: Install solana-verify
         run: cargo install solana-verify --locked
 
-      - name: Build with solana-verify using correct image tag (2.2.1 not v2.2.1)
+      - name: Build with solana-verify (v2.2.1 image, matches OtterSec auto-detection)
         run: |
           solana-verify build --library-name signito_vault \
-            --base-image solanafoundation/solana-verifiable-build:2.2.1
+            --base-image solanafoundation/solana-verifiable-build:v2.2.1
 
       - name: Get executable hash
         id: hash
@@ -57,5 +57,5 @@ jobs:
         run: |
           echo "## Build complete" >> $GITHUB_STEP_SUMMARY
           echo "- Commit: $(git rev-parse HEAD)" >> $GITHUB_STEP_SUMMARY
-          echo "- Image: solanafoundation/solana-verifiable-build:2.2.1" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: solanafoundation/solana-verifiable-build:v2.2.1" >> $GITHUB_STEP_SUMMARY
           echo "- Executable hash: ${{ steps.hash.outputs.executable_hash }}" >> $GITHUB_STEP_SUMMARY
