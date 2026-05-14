@@ -14,10 +14,6 @@ on:
         description: 'Specific commit SHA to build from (default: current HEAD)'
         required: false
         default: ''
-      use_cargo_lock:
-        description: 'Use Cargo.lock for reproducibility (true/false)'
-        required: false
-        default: 'false'
 
 jobs:
   build:
@@ -33,20 +29,15 @@ jobs:
         run: |
           echo "Building commit: $(git rev-parse HEAD)"
           git log -1 --oneline
-
-      - name: Remove Cargo.lock for fresh dependency resolution
-        if: ${{ github.event.inputs.use_cargo_lock != 'true' }}
-        run: |
-          echo "Removing Cargo.lock so build resolves deps fresh (same as OtterSec)"
-          rm -f Cargo.lock
-          ls -la
+          echo "Cargo.lock checksum: $(sha256sum Cargo.lock | cut -c1-16)"
 
       - name: Install solana-verify
         run: cargo install solana-verify --locked
 
-      - name: Build with solana-verify (reproducible Docker build)
+      - name: Build with solana-verify using correct image tag (2.2.1 not v2.2.1)
         run: |
-          solana-verify build --library-name signito_vault
+          solana-verify build --library-name signito_vault \
+            --base-image solanafoundation/solana-verifiable-build:2.2.1
 
       - name: Get executable hash
         id: hash
@@ -66,4 +57,5 @@ jobs:
         run: |
           echo "## Build complete" >> $GITHUB_STEP_SUMMARY
           echo "- Commit: $(git rev-parse HEAD)" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: solanafoundation/solana-verifiable-build:2.2.1" >> $GITHUB_STEP_SUMMARY
           echo "- Executable hash: ${{ steps.hash.outputs.executable_hash }}" >> $GITHUB_STEP_SUMMARY
