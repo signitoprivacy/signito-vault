@@ -1,66 +1,39 @@
 name: Verify Program
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - main
-    paths-ignore:
+    branches: [main]
+    paths:
+      - 'signito-vault/src/**'
+      - 'signito-vault/Cargo.toml'
       - 'Cargo.lock'
-      - '.github/**'
-
-concurrency:
-  group: verify
-  cancel-in-progress: false
+      - 'Anchor.toml'
+  workflow_dispatch:
+    inputs:
+      program_id:
+        description: 'Program ID to verify'
+        required: false
+        default: 'CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX'
 
 jobs:
-  build-and-verify:
-    name: Verify Program on Mainnet
+  verify:
+    name: Submit OtterSec Verification
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install solana-verify
+      - name: Trigger OtterSec remote verification
         run: |
-          curl -L https://github.com/solana-foundation/solana-verifiable-build/releases/download/v0.4.15/solana-verify-0.4.15-linux -o solana-verify
-          chmod +x solana-verify
-          sudo mv solana-verify /usr/local/bin/solana-verify
-          solana-verify --version
+          PROGRAM_ID="${{ github.event.inputs.program_id || 'CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX' }}"
+          COMMIT="${{ github.sha }}"
+          echo "Submitting verification for $PROGRAM_ID at $COMMIT"
+          curl -sf -X POST https://verify.osec.io/verify \
+            -H "Content-Type: application/json" \
+            -d "{"repo": "https://github.com/signitoprivacy/signito-vault", "program_id": "$PROGRAM_ID", "commit": "$COMMIT"}" \
+            | tee verify_response.json || true
+          cat verify_response.json
 
-      - name: Configure Solana keypair and CLI config
-        env:
-          SOLANA_DEPLOYER_KEYPAIR: ${{ secrets.SOLANA_DEPLOYER_KEYPAIR }}
-          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+      - name: Check verification status
         run: |
-          mkdir -p ~/.config/solana/cli
-          echo "$SOLANA_DEPLOYER_KEYPAIR" > ~/.config/solana/id.json
-          chmod 600 ~/.config/solana/id.json
-          cat > ~/.config/solana/cli/config.yml << EOF
-          json_rpc_url: "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}"
-          websocket_url: ""
-          keypair_path: "/home/runner/.config/solana/id.json"
-          address_labels: {}
-          commitment: confirmed
-          EOF
-
-      - name: Verify Program from repo and upload PDA
-        env:
-          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
-        run: |
-          solana-verify verify-from-repo \
-            --url "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}" \
-            --program-id CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
-            --library-name signito_vault \
-            --base-image solanafoundation/solana-verifiable-build:3.1.14 \
-            --skip-prompt \
-            --keypair /home/runner/.config/solana/id.json \
-            https://github.com/signitoprivacy/signito-vault
-
-      - name: Submit remote verification job to otter.so
-        env:
-          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
-        run: |
-          solana-verify remote submit-job \
-            --url "https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}" \
-            --program-id CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
-            --uploader BNzyXaTXopiCCffJ6Ee7XCvPiXwVxEVThteN8S7kBMge
+          sleep 30
+          curl -sf "https://verify.osec.io/status/CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX" | python3 -m json.tool

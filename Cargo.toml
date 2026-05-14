@@ -1,35 +1,11 @@
-[package]
-name = "signito-vault"
-version = "0.1.0"
-description = "Signito SafeVault: non-custodial OTS Protocol vault for SPL Token-2022 on Solana"
-authors = ["Signito Protocol <contact@signito.org>"]
-homepage = "https://signito.org"
-license = "MIT"
-edition = "2021"
+[workspace]
+members = ["signito-vault"]
+resolver = "2"
 
-[lib]
-crate-type = ["cdylib", "lib"]
-name = "signito_vault"
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
 
-[features]
-no-entrypoint = []
-no-idl = []
-no-log-ix-name = []
-cpi = ["no-entrypoint"]
-default = []
-idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
-
-[dependencies]
-anchor-lang = { version = "0.31.1", features = ["init-if-needed"] }
-anchor-spl = { version = "0.31.1", features = ["token", "token_2022", "associated_token"] }
-spl-token = { version = "6.0.0", features = ["no-entrypoint"] }
-spl-token-2022 = { version = "6.0.0", features = ["no-entrypoint"] }
-spl-token-metadata-interface = { version = "0.4" }
-spl-associated-token-account = { version = "4.0.0", features = ["no-entrypoint"] }
-solana-security-txt = "1.1.1"
-# Explicit version pins for reproducible verifiable build.
-# solana-zk-token-sdk 2.3.x has a compile bug for the SBF target (missing imports
-# in with_fee.rs). solana-program 2.3.x requires solana-instruction ^2.3.0 which
-# conflicts with solana-zk-sdk 2.2.0 pin (=2.2.1). Both must be pinned together.
-solana-program = "=2.2.1"
-solana-zk-sdk = "=2.2.0"
+[profile.dev]
+overflow-checks = true
