@@ -1,4 +1,4 @@
-name: Verify Program
+name: Build and Verify Program
 
 on:
   push:
@@ -9,27 +9,49 @@ on:
       - 'Cargo.lock'
       - 'Anchor.toml'
   workflow_dispatch:
-    inputs:
-      program_id:
-        description: 'Program ID to verify'
-        required: false
-        default: 'CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX'
 
 jobs:
-  verify:
-    name: Submit OtterSec Verification
+  build:
+    name: Verifiable Build
     runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v4
 
+      - name: Install solana-verify
+        run: cargo install solana-verify --locked
+
+      - name: Build with solana-verify (reproducible Docker build)
+        run: |
+          solana-verify build --library-name signito_vault
+
+      - name: Get executable hash
+        run: |
+          HASH=$(solana-verify get-executable-hash target/deploy/signito_vault.so)
+          echo "executable_hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Built binary hash: $HASH"
+        id: hash
+
+      - name: Upload built binary as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: signito_vault_verifiable
+          path: target/deploy/signito_vault.so
+          retention-days: 7
+
+  verify:
+    name: Submit OtterSec Verification
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
       - name: Trigger OtterSec remote verification
         run: |
-          PROGRAM_ID="${{ github.event.inputs.program_id || 'CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX' }}"
           COMMIT="${{ github.sha }}"
-          echo "Submitting verification for $PROGRAM_ID at $COMMIT"
+          echo "Submitting verification for commit $COMMIT"
           curl -sf -X POST https://verify.osec.io/verify \
             -H "Content-Type: application/json" \
-            -d "{"repo": "https://github.com/signitoprivacy/signito-vault", "program_id": "$PROGRAM_ID", "commit": "$COMMIT"}" \
+            -d "{\"repo\": \"https://github.com/signitoprivacy/signito-vault\", \"program_id\": \"CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX\", \"commit\": \"$COMMIT\"}" \
             | tee verify_response.json || true
           cat verify_response.json
 
