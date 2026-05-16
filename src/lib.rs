@@ -5,9 +5,12 @@ pub mod errors;
 pub mod instructions;
 pub mod state;
 
+use instructions::admin_mint::*;
 use instructions::burn_and_queue::*;
 use instructions::claim_airsign::*;
 use instructions::close_account::*;
+use instructions::decoy_burn::*;
+use instructions::decoy_shield::*;
 use instructions::deposit::*;
 use instructions::deposit_funder::*;
 use instructions::fund_fresh_relayer::*;
@@ -134,5 +137,31 @@ pub mod signito_vault {
     // Replaces the old frozen-account design with soulbound Token-2022 enforcement.
     pub fn rotate_mint(ctx: Context<RotateMint>) -> Result<()> {
         instructions::rotate_mint::handler(ctx)
+    }
+
+    // --- Mix layer: decoy instructions for transaction privacy ---
+
+    // Relayer-only: mint phantom sSOL to a decoy token account without SOL deposit.
+    // Used to pre-fill or restore decoy accounts for the shield/unshield mix layer.
+    // pool.total_deposited is NOT updated -- no backing SOL.
+    pub fn admin_mint(ctx: Context<AdminMint>, args: AdminMintArgs) -> Result<()> {
+        instructions::admin_mint::handler(ctx, args)
+    }
+
+    // Relayer-only: burn sSOL from N decoy accounts (via remaining_accounts) without
+    // releasing SOL from pool. Included alongside a real unshield or ZK send so
+    // observers see N+1 identical burns and cannot identify the real one.
+    pub fn decoy_burn<'info>(
+        ctx: Context<'_, '_, '_, 'info, DecoyBurn<'info>>,
+        args: DecoyBurnArgs,
+    ) -> Result<()> {
+        instructions::decoy_burn::handler(ctx, args)
+    }
+
+    // Relayer-only: create a structurally identical stoken_ata + user_state PDA
+    // alongside a real shield, without depositing SOL. Observers see N+1 new sSOL
+    // accounts in one block and cannot identify the real user's account.
+    pub fn decoy_shield(ctx: Context<DecoyShield>, args: DecoyShieldArgs) -> Result<()> {
+        instructions::decoy_shield::handler(ctx, args)
     }
 }

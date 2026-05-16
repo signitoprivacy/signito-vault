@@ -13,13 +13,24 @@ pub struct DepositArgs {
     pub amount: u64,
 }
 
-// Deposit: add more SOL to an existing user's pool position and mint more sSOL.
-// Owner must sign (they are transferring SOL). Owner is visible in this tx,
-// same as the initial shield -- this is acceptable for deposit operations.
+// Deposit: add more SOL to an existing user position and mint more sSOL.
+//
+// TWO-ACTOR DESIGN (mirrors shield):
+//   owner         = freshDepositWallet (server-controlled ephemeral keypair)
+//                   Pays the deposit SOL. User only signs a plain SystemProgram.transfer.
+//   display_owner = user's real connected wallet (NON-signer)
+//                   Verified against stoken_ata authority to confirm vault ownership.
+//
+// Authorization: stoken_ata.authority must equal display_owner.key().
+// This works for both new vaults (authority = display_owner set during shield) and
+// legacy vaults (authority = original user wallet, pass display_owner = userWallet).
 #[derive(Accounts)]
 pub struct Deposit<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
+
+    /// CHECK: user's real wallet; must match stoken_ata authority. NOT a signer.
+    pub display_owner: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -55,14 +66,14 @@ pub struct Deposit<'info> {
 pub fn handler(ctx: Context<Deposit>, args: DepositArgs) -> Result<()> {
     require!(args.amount > 0, SignitoError::InvalidAmount);
 
-    // Verify stoken_ata is owned by this wallet (authority at offset 32..64)
+    // Verify stoken_ata is owned by display_owner (authority at offset 32..64)
     {
         let data = ctx.accounts.stoken_ata.data.borrow();
         require!(data.len() >= 64, SignitoError::Unauthorized);
         let mut key_bytes = [0u8; 32];
         key_bytes.copy_from_slice(&data[32..64]);
         require!(
-            Pubkey::from(key_bytes) == ctx.accounts.owner.key(),
+            Pubkey::from(key_bytes) == ctx.accounts.display_owner.key(),
             SignitoError::Unauthorized
         );
     }
@@ -87,6 +98,7 @@ pub fn handler(ctx: Context<Deposit>, args: DepositArgs) -> Result<()> {
             .ok_or(SignitoError::Overflow)?;
     }
 
+    // Transfer SOL from owner (freshDepositWallet) to pool
     invoke(
         &system_instruction::transfer(ctx.accounts.owner.key, &pool_key, args.amount),
         &[
@@ -96,34 +108,9 @@ pub fn handler(ctx: Context<Deposit>, args: DepositArgs) -> Result<()> {
         ],
     )?;
 
-    let is_frozen = ctx
-        .accounts
-        .stoken_ata
-        .data
-        .borrow()
-        .get(108)
-        .copied()
-        == Some(2);
-
-    if is_frozen {
-        invoke_signed(
-            &spl_token_2022::instruction::thaw_account(
-                &TOKEN_2022_ID,
-                ctx.accounts.stoken_ata.key,
-                ctx.accounts.mint_stoken.key,
-                &pool_key,
-                &[],
-            )
-            .map_err(|_| error!(SignitoError::Overflow))?,
-            &[
-                ctx.accounts.stoken_ata.to_account_info(),
-                ctx.accounts.mint_stoken.to_account_info(),
-                ctx.accounts.pool_pda.to_account_info(),
-            ],
-            pool_seeds,
-        )?;
-    }
-
+    // Mint sSOL to the user's existing stoken_ata.
+    // pool_pda is mint_authority (set during initialize_pool with freeze_authority=None).
+    // No freeze/thaw needed: the mint has no freeze_authority.
     invoke_signed(
         &spl_token_2022::instruction::mint_to(
             &TOKEN_2022_ID,
@@ -137,41 +124,6 @@ pub fn handler(ctx: Context<Deposit>, args: DepositArgs) -> Result<()> {
         &[
             ctx.accounts.mint_stoken.to_account_info(),
             ctx.accounts.stoken_ata.to_account_info(),
-            ctx.accounts.pool_pda.to_account_info(),
-        ],
-        pool_seeds,
-    )?;
-
-    // Re-approve pool_pda as delegate after minting more sSOL
-    invoke(
-        &spl_token_2022::instruction::approve(
-            &TOKEN_2022_ID,
-            ctx.accounts.stoken_ata.key,
-            &pool_key,
-            ctx.accounts.owner.key,
-            &[],
-            u64::MAX,
-        )
-        .map_err(|_| error!(SignitoError::Overflow))?,
-        &[
-            ctx.accounts.stoken_ata.to_account_info(),
-            ctx.accounts.pool_pda.to_account_info(),
-            ctx.accounts.owner.to_account_info(),
-        ],
-    )?;
-
-    invoke_signed(
-        &spl_token_2022::instruction::freeze_account(
-            &TOKEN_2022_ID,
-            ctx.accounts.stoken_ata.key,
-            ctx.accounts.mint_stoken.key,
-            &pool_key,
-            &[],
-        )
-        .map_err(|_| error!(SignitoError::Overflow))?,
-        &[
-            ctx.accounts.stoken_ata.to_account_info(),
-            ctx.accounts.mint_stoken.to_account_info(),
             ctx.accounts.pool_pda.to_account_info(),
         ],
         pool_seeds,

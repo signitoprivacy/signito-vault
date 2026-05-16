@@ -24,12 +24,15 @@ pub struct BurnAndQueueArgs {
 // On-chain trace from TX1: fresh_wallet -> stoken_ata -> user_state -> pool_pda
 // On-chain trace from TX2: relayer -> pool_pda -> recipient
 // No common account between TX1 and TX2.
+//
+// Authorization: pool_pda is PermanentDelegate on new accounts (post-upgrade), or
+// approved delegate on legacy accounts (pre-upgrade). Token-2022 accepts both.
 #[derive(Accounts)]
 pub struct BurnAndQueue<'info> {
     #[account(mut)]
     pub fresh_wallet: Signer<'info>,
 
-    /// CHECK: sSOL token account; pool_pda must be delegate (verified in handler)
+    /// CHECK: sSOL token account; pool_pda must be PermanentDelegate or approved delegate
     #[account(mut)]
     pub stoken_ata: UncheckedAccount<'info>,
 
@@ -79,26 +82,6 @@ pub fn handler(ctx: Context<BurnAndQueue>, args: BurnAndQueueArgs) -> Result<()>
             SignitoError::InsufficientFunds
         );
 
-        // Verify pool_pda is the delegate on stoken_ata.
-        // Token account layout: delegate_option at [72..76], delegate pubkey at [76..108]
-        let data = ctx.accounts.stoken_ata.data.borrow();
-        require!(data.len() >= 108, SignitoError::Unauthorized);
-
-        let delegate_option = u32::from_le_bytes(
-            data[72..76]
-                .try_into()
-                .map_err(|_| error!(SignitoError::Unauthorized))?,
-        );
-        require!(delegate_option == 1, SignitoError::Unauthorized);
-
-        let mut key_bytes = [0u8; 32];
-        key_bytes.copy_from_slice(&data[76..108]);
-        require!(
-            Pubkey::from(key_bytes) == pool_key,
-            SignitoError::Unauthorized
-        );
-        drop(data);
-
         user_state.current_ots_hash = args.ots_preimage;
         user_state.chain_depth = user_state
             .chain_depth
@@ -118,8 +101,10 @@ pub fn handler(ctx: Context<BurnAndQueue>, args: BurnAndQueueArgs) -> Result<()>
             .ok_or(SignitoError::Overflow)?;
     }
 
-    // Burn sSOL via pool_pda delegate authority.
-    // NonTransferable mint has no freeze authority -- no thaw needed.
+    // Burn sSOL via pool_pda as authority.
+    // For post-upgrade accounts: pool_pda is PermanentDelegate (Token-2022 accepts).
+    // For pre-upgrade accounts: pool_pda is approved delegate (Token-2022 accepts both).
+    // Token-2022 enforces authorization; no manual delegate check needed here.
     invoke_signed(
         &spl_token_2022::instruction::burn(
             &TOKEN_2022_ID,

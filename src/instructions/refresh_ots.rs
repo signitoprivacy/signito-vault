@@ -5,14 +5,19 @@ use crate::state::UserState;
 
 // RefreshOts: reset the OTS chain on an existing user_state.
 //
-// Owner must sign (acceptable privacy tradeoff -- refresh is a maintenance op).
-// When chain_depth reaches 0, derive a new tip using next generation suffix:
-//   gen N: PBKDF2(vaultCode, walletAddress + ":gen:" + N, 100_000, SHA-256)
-// then SHA-256^depth to get the new chain tip.
+// TWO-ACTOR DESIGN (mirrors shield/deposit):
+//   owner         = freshWallet (server-controlled, stored ownerKeypair from DB)
+//   display_owner = user's real wallet (NON-signer); must match stoken_ata authority
+//
+// Server retrieves stored ownerKeypair for this vault, signs as owner.
+// User never signs a program instruction.
 #[derive(Accounts)]
 pub struct RefreshOts<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
+
+    /// CHECK: user's real wallet; must match stoken_ata authority. NOT a signer.
+    pub display_owner: UncheckedAccount<'info>,
 
     /// CHECK: user's stoken_ata (random address). Used for PDA derivation only.
     pub stoken_ata: UncheckedAccount<'info>,
@@ -33,14 +38,14 @@ pub struct RefreshOtsArgs {
 }
 
 pub fn handler(ctx: Context<RefreshOts>, args: RefreshOtsArgs) -> Result<()> {
-    // Verify stoken_ata is owned by this wallet (authority at offset 32..64)
+    // Verify stoken_ata is owned by display_owner (authority at offset 32..64)
     {
         let data = ctx.accounts.stoken_ata.data.borrow();
         require!(data.len() >= 64, SignitoError::Unauthorized);
         let mut key_bytes = [0u8; 32];
         key_bytes.copy_from_slice(&data[32..64]);
         require!(
-            Pubkey::from(key_bytes) == ctx.accounts.owner.key(),
+            Pubkey::from(key_bytes) == ctx.accounts.display_owner.key(),
             SignitoError::Unauthorized
         );
     }

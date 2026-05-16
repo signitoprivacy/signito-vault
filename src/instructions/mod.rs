@@ -1,6 +1,9 @@
+pub mod admin_mint;
 pub mod burn_and_queue;
 pub mod claim_airsign;
 pub mod close_account;
+pub mod decoy_burn;
+pub mod decoy_shield;
 pub mod deposit;
 pub mod deposit_funder;
 pub mod fund_fresh_relayer;
