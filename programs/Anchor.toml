@@ -9,7 +9,7 @@ signito_vault = "5gbaenRHg2YK6X8WMMQZevD55bJ7fvr4V8E8e1feDt5D"
 signito_vault = "5gbaenRHg2YK6X8WMMQZevD55bJ7fvr4V8E8e1feDt5D"
 
 [programs.mainnet]
-signito_vault = "5gbaenRHg2YK6X8WMMQZevD55bJ7fvr4V8E8e1feDt5D"
+signito_vault = "CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX"
 
 [registry]
 url = "https://api.apr.dev"
