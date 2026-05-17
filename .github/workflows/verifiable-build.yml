@@ -46,14 +46,18 @@ jobs:
           HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
         run: |
           echo "$DEPLOYER_KEYPAIR" > /tmp/deployer.json
-          RPC_URL="https://mainnet.helius-rpc.com/?api-key=$HELIUS_API_KEY"
           export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
-          solana program upgrade \
+          RPC_URL="https://mainnet.helius-rpc.com/?api-key=$HELIUS_API_KEY"
+          BUFFER=$(solana program write-buffer \
             programs/target/deploy/signito_vault.so \
-            CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
             --keypair /tmp/deployer.json \
             --url "$RPC_URL" \
-            
+            --commitment confirmed | grep 'Buffer:' | awk '{print $2}')
+          echo "Buffer pubkey: $BUFFER"
+          solana program upgrade "$BUFFER" CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
+            --keypair /tmp/deployer.json \
+            --url "$RPC_URL" \
+            --commitment confirmed
           rm /tmp/deployer.json
 
       - name: Trigger OtterSec verification
@@ -63,7 +67,6 @@ jobs:
             -H "Content-Type: application/json" \
             -d "{\"program_id\":\"CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX\",\"signer\":\"BNzyXaTXopiCCffJ6Ee7XCvPiXwVxEVThteN8S7kBMge\",\"repository\":\"https://github.com/signitoprivacy/signito-vault\",\"commit_hash\":\"$COMMIT\"}")
           echo "OtterSec response: $RESP"
-          echo "Verification triggered for commit $COMMIT"
 
       - name: Check verification status
         run: |
