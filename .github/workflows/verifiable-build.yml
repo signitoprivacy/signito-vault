@@ -16,14 +16,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build with pinned OtterSec verifiable image
+      - name: Build with OtterSec pinned verifiable image
         run: |
-          docker pull solanafoundation/solana-verifiable-build@sha256:1ec3341e04bc52e99b6f26f3c41d58e6c48e3a30cb92b32571dc2aa29e2acc95
+          docker pull solanafoundation/solana-verifiable-build@sha256:1ec3341e3a7687ac32178778f1c87e6f6c1ffb1dbc0ad2611ac5393c81362070
           mkdir -p programs/target/deploy
           docker run --rm \
             -v "$(pwd):/workspace" \
             -w /workspace \
-            solanafoundation/solana-verifiable-build@sha256:1ec3341e04bc52e99b6f26f3c41d58e6c48e3a30cb92b32571dc2aa29e2acc95 \
+            solanafoundation/solana-verifiable-build@sha256:1ec3341e3a7687ac32178778f1c87e6f6c1ffb1dbc0ad2611ac5393c81362070 \
             cargo build-sbf --manifest-path programs/signito-vault/Cargo.toml
           sha256sum programs/target/deploy/signito_vault.so
           echo "executable_hash=$(sha256sum programs/target/deploy/signito_vault.so | cut -d' ' -f1)" >> $GITHUB_ENV
@@ -60,7 +60,7 @@ jobs:
             --commitment confirmed
           rm /tmp/deployer.json
 
-      - name: Trigger OtterSec verification
+      - name: Update OtterSec verification PDA and trigger verification
         run: |
           COMMIT=$(git rev-parse HEAD)
           RESP=$(curl -s -X POST https://verify.osec.io/verify-with-signer \
@@ -70,5 +70,5 @@ jobs:
 
       - name: Check verification status
         run: |
-          sleep 10
+          sleep 15
           curl -s https://verify.osec.io/status/CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX | python3 -m json.tool
