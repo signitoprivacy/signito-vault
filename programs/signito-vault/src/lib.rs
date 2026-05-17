@@ -9,6 +9,7 @@ use instructions::admin_mint::*;
 use instructions::burn_and_queue::*;
 use instructions::claim_airsign::*;
 use instructions::close_account::*;
+use instructions::close_decoy::*;
 use instructions::decoy_burn::*;
 use instructions::decoy_shield::*;
 use instructions::deposit::*;
@@ -55,7 +56,7 @@ pub mod signito_vault {
 
     // Legacy single-TX private transfer: burn sSOL, pool sends SOL to recipient in same TX.
     // Kept for backward compatibility. Use burn_and_queue + process_queue for new flows.
-    pub fn private_send(ctx: Context<PrivateSend>, args: PrivateSendArgs) -> Result<()> {
+    pub fn private_send<'info>(ctx: Context<'_, '_, '_, 'info, PrivateSend<'info>>, args: PrivateSendArgs) -> Result<()> {
         instructions::private_send::handler(ctx, args)
     }
 
@@ -93,7 +94,8 @@ pub mod signito_vault {
 
     // TX1: OTS-verified sSOL burn. Signed by ephemeral fresh_wallet (funded by FunderPDA).
     // No recipient on-chain. Recipient submitted off-chain to relayer after this TX confirms.
-    pub fn burn_and_queue(ctx: Context<BurnAndQueue>, args: BurnAndQueueArgs) -> Result<()> {
+    // remaining_accounts: optional decoy stoken_ata[] burned in the same instruction.
+    pub fn burn_and_queue<'info>(ctx: Context<'_, '_, '_, 'info, BurnAndQueue<'info>>, args: BurnAndQueueArgs) -> Result<()> {
         instructions::burn_and_queue::handler(ctx, args)
     }
 
@@ -163,5 +165,16 @@ pub mod signito_vault {
     // accounts in one block and cannot identify the real user's account.
     pub fn decoy_shield(ctx: Context<DecoyShield>, args: DecoyShieldArgs) -> Result<()> {
         instructions::decoy_shield::handler(ctx, args)
+    }
+
+    // Relayer-only: close depleted decoy stoken_ata accounts and their user_state PDAs.
+    // Returns all rent lamports to the relayer (net cost of mix layer = 0).
+    // Called in a separate block after decoy_burn confirms -- never in the same TX as
+    // the burn, so observers cannot link cleanup to any specific user action.
+    // remaining_accounts: interleaved pairs [stoken_ata writable, user_state writable]
+    pub fn close_decoy<'info>(
+        ctx: Context<'_, '_, '_, 'info, CloseDecoy<'info>>,
+    ) -> Result<()> {
+        instructions::close_decoy::handler(ctx)
     }
 }
