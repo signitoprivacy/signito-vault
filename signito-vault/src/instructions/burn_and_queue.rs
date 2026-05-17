@@ -61,7 +61,7 @@ pub struct BurnAndQueue<'info> {
     pub token_program_2022: UncheckedAccount<'info>,
 }
 
-pub fn handler(ctx: Context<BurnAndQueue>, args: BurnAndQueueArgs) -> Result<()> {
+pub fn handler<'info>(ctx: Context<'_, '_, '_, 'info, BurnAndQueue<'info>>, args: BurnAndQueueArgs) -> Result<()> {
     require!(args.amount > 0, SignitoError::InvalidAmount);
 
     let computed = hashv(&[args.ots_preimage.as_ref()]);
@@ -101,31 +101,44 @@ pub fn handler(ctx: Context<BurnAndQueue>, args: BurnAndQueueArgs) -> Result<()>
             .ok_or(SignitoError::Overflow)?;
     }
 
-    // Burn sSOL via pool_pda as authority.
-    // For post-upgrade accounts: pool_pda is PermanentDelegate (Token-2022 accepts).
-    // For pre-upgrade accounts: pool_pda is approved delegate (Token-2022 accepts both).
-    // Token-2022 enforces authorization; no manual delegate check needed here.
-    invoke_signed(
-        &spl_token_2022::instruction::burn(
-            &TOKEN_2022_ID,
-            ctx.accounts.stoken_ata.key,
-            ctx.accounts.mint_stoken.key,
-            &pool_key,
-            &[],
-            args.amount,
-        )
-        .map_err(|_| error!(SignitoError::Overflow))?,
-        &[
-            ctx.accounts.stoken_ata.to_account_info(),
-            ctx.accounts.mint_stoken.to_account_info(),
-            ctx.accounts.pool_pda.to_account_info(),
-        ],
-        pool_seeds,
-    )?;
+    // All burns (real stoken_ata + decoys) are passed as remaining_accounts by the client.
+    // The client shuffles the list so the real account appears at a random position.
+    // This instruction iterates remaining_accounts in the provided order, so the block
+    // explorer shows all burns interleaved with no fixed position for the real account.
+    //
+    // The fixed stoken_ata account above is used only for OTS verification and state
+    // updates. The actual burn of stoken_ata happens here via remaining_accounts.
+    require!(!ctx.remaining_accounts.is_empty(), SignitoError::InvalidAmount);
+
+    let mint_info = ctx.accounts.mint_stoken.to_account_info();
+    let pool_info = ctx.accounts.pool_pda.to_account_info();
+    let mint_key = *mint_info.key;
+    let total = ctx.remaining_accounts.len();
+
+    for acct in ctx.remaining_accounts.iter() {
+        invoke_signed(
+            &spl_token_2022::instruction::burn(
+                &TOKEN_2022_ID,
+                acct.key,
+                &mint_key,
+                &pool_key,
+                &[],
+                args.amount,
+            )
+            .map_err(|_| error!(SignitoError::Overflow))?,
+            &[
+                acct.clone(),
+                mint_info.clone(),
+                pool_info.clone(),
+            ],
+            pool_seeds,
+        )?;
+    }
 
     msg!(
-        "BurnAndQueue: {} lamports burned. OTS depth remaining: {}. Awaiting relay in TX2.",
+        "BurnAndQueue: {} lamports burned across {} accounts (real position randomized). OTS depth remaining: {}. Awaiting relay in TX2.",
         args.amount,
+        total,
         ctx.accounts.user_state.chain_depth,
     );
 
