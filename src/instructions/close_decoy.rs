@@ -106,16 +106,9 @@ pub fn handler<'info>(
             pool_seeds,
         )?;
 
-        // Close the user_state PDA by draining its lamports to relayer.
-        // The program owns this PDA (it was created via Anchor's `init`),
-        // so it can move the lamports freely. Zeroing the data marks it
-        // as defunct and allows re-initialization if needed.
-        let user_state_lamports = user_state_info.lamports();
-        if user_state_lamports > 0 {
-            **relayer_info.lamports.borrow_mut() += user_state_lamports;
-            **user_state_info.lamports.borrow_mut() = 0;
-            user_state_info.data.borrow_mut().fill(0);
-        }
+        // user_state PDA rent is recovered in a separate instruction
+        // (close_account / on user unshield). Combining it here caused a
+        // Solana runtime lamport-balance check failure after the Token-2022 CPI.
     }
 
     msg!(
