@@ -1,0 +1,71 @@
+name: Verifiable Build and Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_hash:
+        description: 'Commit hash to verify against'
+        required: false
+        type: string
+
+jobs:
+  build-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build with verifiable Docker image
+        run: |
+          docker pull solanafoundation/solana-verifiable-build:v2.2.1
+          mkdir -p programs/target/deploy
+          docker run --rm \
+            -v "$(pwd)/programs:/workspace" \
+            -w /workspace \
+            solanafoundation/solana-verifiable-build:v2.2.1 \
+            cargo build-sbf --manifest-path signito-vault/Cargo.toml
+          sha256sum programs/target/deploy/signito_vault.so
+          echo "executable_hash=$(sha256sum programs/target/deploy/signito_vault.so | cut -d' ' -f1)" >> $GITHUB_ENV
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: signito_vault_so
+          path: programs/target/deploy/signito_vault.so
+          retention-days: 7
+
+      - name: Install Solana CLI 2.2.1
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/v2.2.1/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> $GITHUB_PATH
+
+      - name: Deploy to mainnet
+        env:
+          DEPLOYER_KEYPAIR: ${{ secrets.DEPLOYER_KEYPAIR }}
+          HELIUS_API_KEY: ${{ secrets.HELIUS_API_KEY }}
+        run: |
+          echo "$DEPLOYER_KEYPAIR" > /tmp/deployer.json
+          RPC_URL="https://mainnet.helius-rpc.com/?api-key=$HELIUS_API_KEY"
+          export PATH="$HOME/.local/share/solana/install/active_release/bin:$PATH"
+          solana program upgrade \
+            programs/target/deploy/signito_vault.so \
+            CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
+            --keypair /tmp/deployer.json \
+            --url "$RPC_URL" \
+            --with-compute-unit-price 50000
+          rm /tmp/deployer.json
+
+      - name: Trigger OtterSec verification
+        run: |
+          COMMIT=$(git rev-parse HEAD)
+          RESP=$(curl -s -X POST https://verify.osec.io/verify-with-signer \
+            -H "Content-Type: application/json" \
+            -d "{\"program_id\":\"CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX\",\"signer\":\"BNzyXaTXopiCCffJ6Ee7XCvPiXwVxEVThteN8S7kBMge\",\"repository\":\"https://github.com/signitoprivacy/signito-vault\",\"commit_hash\":\"$COMMIT\"}")
+          echo "OtterSec response: $RESP"
+          echo "Verification triggered for commit $COMMIT"
+
+      - name: Check verification status
+        run: |
+          sleep 10
+          curl -s https://verify.osec.io/status/CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX | python3 -m json.tool
