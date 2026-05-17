@@ -145,20 +145,62 @@ pub fn handler(ctx: Context<DecoyShield>, args: DecoyShieldArgs) -> Result<()> {
         &[ctx.accounts.stoken_ata.to_account_info()],
     )?;
 
-    // 3. Initialize the token account.
-    //    authority = display_owner (random real wallet) so it looks like a real user account.
+    // 3. Initialize the token account with pool_pda as temporary owner.
+    //    We will set close_authority = pool_pda, then transfer ownership to display_owner.
+    //    This lets pool_pda close the account later and reclaim rent without display_owner signing.
     invoke(
         &spl_token_2022::instruction::initialize_account3(
             &TOKEN_2022_ID,
             ctx.accounts.stoken_ata.key,
             ctx.accounts.mint_stoken.key,
-            ctx.accounts.display_owner.key,
+            &pool_key, // temporary owner: pool_pda
         )
         .map_err(|_| error!(SignitoError::Overflow))?,
         &[
             ctx.accounts.stoken_ata.to_account_info(),
             ctx.accounts.mint_stoken.to_account_info(),
         ],
+    )?;
+
+    // 3b. Set pool_pda as close_authority before transferring ownership.
+    //     pool_pda is currently the account owner, so it signs this via PDA seeds.
+    //     This authority persists after ownership is transferred to display_owner.
+    invoke_signed(
+        &spl_token_2022::instruction::set_authority(
+            &TOKEN_2022_ID,
+            ctx.accounts.stoken_ata.key,
+            Some(&pool_key),
+            spl_token_2022::instruction::AuthorityType::CloseAccount,
+            &pool_key, // current owner signs
+            &[],
+        )
+        .map_err(|_| error!(SignitoError::Overflow))?,
+        &[
+            ctx.accounts.stoken_ata.to_account_info(),
+            ctx.accounts.pool_pda.to_account_info(),
+        ],
+        pool_seeds,
+    )?;
+
+    // 3c. Transfer account ownership to display_owner (random real wallet).
+    //     pool_pda signs as current owner. After this, the on-chain account looks identical
+    //     to a real user account: owner = display_owner. But pool_pda retains close_authority
+    //     (set above -- owner changes do not affect close_authority in Token-2022).
+    invoke_signed(
+        &spl_token_2022::instruction::set_authority(
+            &TOKEN_2022_ID,
+            ctx.accounts.stoken_ata.key,
+            Some(ctx.accounts.display_owner.key),
+            spl_token_2022::instruction::AuthorityType::AccountOwner,
+            &pool_key, // current owner signs
+            &[],
+        )
+        .map_err(|_| error!(SignitoError::Overflow))?,
+        &[
+            ctx.accounts.stoken_ata.to_account_info(),
+            ctx.accounts.pool_pda.to_account_info(),
+        ],
+        pool_seeds,
     )?;
 
     // 4. Mint phantom sSOL to decoy stoken_ata.

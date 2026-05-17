@@ -9,6 +9,7 @@ use instructions::admin_mint::*;
 use instructions::burn_and_queue::*;
 use instructions::claim_airsign::*;
 use instructions::close_account::*;
+use instructions::close_decoy::*;
 use instructions::decoy_burn::*;
 use instructions::decoy_shield::*;
 use instructions::deposit::*;
@@ -163,5 +164,16 @@ pub mod signito_vault {
     // accounts in one block and cannot identify the real user's account.
     pub fn decoy_shield(ctx: Context<DecoyShield>, args: DecoyShieldArgs) -> Result<()> {
         instructions::decoy_shield::handler(ctx, args)
+    }
+
+    // Relayer-only: close depleted decoy stoken_ata accounts and their user_state PDAs.
+    // Returns all rent lamports to the relayer (net cost of mix layer = 0).
+    // Called in a separate block after decoy_burn confirms -- never in the same TX as
+    // the burn, so observers cannot link cleanup to any specific user action.
+    // remaining_accounts: interleaved pairs [stoken_ata writable, user_state writable]
+    pub fn close_decoy<'info>(
+        ctx: Context<'_, '_, '_, 'info, CloseDecoy<'info>>,
+    ) -> Result<()> {
+        instructions::close_decoy::handler(ctx)
     }
 }
