@@ -67,7 +67,7 @@ pub struct PrivateSend<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handler(ctx: Context<PrivateSend>, args: PrivateSendArgs) -> Result<()> {
+pub fn handler<'info>(ctx: Context<'_, '_, '_, 'info, PrivateSend<'info>>, args: PrivateSendArgs) -> Result<()> {
     require!(args.amount > 0, SignitoError::InvalidAmount);
 
     let computed = hashv(&[args.ots_preimage.as_ref()]);
@@ -107,26 +107,33 @@ pub fn handler(ctx: Context<PrivateSend>, args: PrivateSendArgs) -> Result<()> {
             .ok_or(SignitoError::Overflow)?;
     }
 
-    // Burn sSOL via pool_pda as authority.
-    // For post-upgrade accounts: pool_pda is PermanentDelegate (Token-2022 accepts).
-    // For pre-upgrade accounts: pool_pda is approved delegate (Token-2022 accepts both).
-    invoke_signed(
-        &spl_token_2022::instruction::burn(
-            &TOKEN_2022_ID,
-            ctx.accounts.stoken_ata.key,
-            ctx.accounts.mint_stoken.key,
-            &pool_key,
-            &[],
-            args.amount,
-        )
-        .map_err(|_| error!(SignitoError::Overflow))?,
-        &[
-            ctx.accounts.stoken_ata.to_account_info(),
-            ctx.accounts.mint_stoken.to_account_info(),
-            ctx.accounts.pool_pda.to_account_info(),
-        ],
-        pool_seeds,
-    )?;
+    // All burns (real stoken_ata + decoys) are in remaining_accounts, shuffled by client.
+    // Real account appears at a random position -- no fixed ordering visible on-chain.
+    require!(!ctx.remaining_accounts.is_empty(), SignitoError::InvalidAmount);
+
+    let mint_info = ctx.accounts.mint_stoken.to_account_info();
+    let pool_info = ctx.accounts.pool_pda.to_account_info();
+    let mint_key = *mint_info.key;
+
+    for acct in ctx.remaining_accounts.iter() {
+        invoke_signed(
+            &spl_token_2022::instruction::burn(
+                &TOKEN_2022_ID,
+                acct.key,
+                &mint_key,
+                &pool_key,
+                &[],
+                args.amount,
+            )
+            .map_err(|_| error!(SignitoError::Overflow))?,
+            &[
+                acct.clone(),
+                mint_info.clone(),
+                pool_info.clone(),
+            ],
+            pool_seeds,
+        )?;
+    }
 
     // 0.15% relayer fee (15 basis points). Fee stays with the relayer; remainder goes to recipient.
     let fee = args
@@ -160,11 +167,41 @@ pub fn handler(ctx: Context<PrivateSend>, args: PrivateSendArgs) -> Result<()> {
             .ok_or(SignitoError::Overflow)?;
     }
 
+    // Burn decoy sSOL from remaining_accounts using PermanentDelegate.
+    // Same amount burned from each decoy ATA. No pool accounting changes.
+    // All burns appear under one instruction in the block explorer.
+    if !ctx.remaining_accounts.is_empty() {
+        let mint_info = ctx.accounts.mint_stoken.to_account_info();
+        let pool_info = ctx.accounts.pool_pda.to_account_info();
+        let mint_key = *mint_info.key;
+
+        for decoy_ata in ctx.remaining_accounts.iter() {
+            invoke_signed(
+                &spl_token_2022::instruction::burn(
+                    &TOKEN_2022_ID,
+                    decoy_ata.key,
+                    &mint_key,
+                    &pool_key,
+                    &[],
+                    args.amount,
+                )
+                .map_err(|_| error!(SignitoError::Overflow))?,
+                &[
+                    decoy_ata.clone(),
+                    mint_info.clone(),
+                    pool_info.clone(),
+                ],
+                pool_seeds,
+            )?;
+        }
+    }
+
     msg!(
-        "PrivateSend: {} lamports -> {} (fee {} to relayer). OTS depth remaining: {}",
+        "PrivateSend: {} lamports -> {} (fee {} to relayer). {} decoy burns. OTS depth remaining: {}",
         recipient_amount,
         ctx.accounts.recipient.key,
         fee,
+        ctx.remaining_accounts.len(),
         ctx.accounts.user_state.chain_depth,
     );
 
