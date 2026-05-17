@@ -35,7 +35,7 @@ pub struct DecoyShieldArgs {
 // Accounts:
 //   0. relayer          writable signer (must match funder_pda.relayer, pays rent)
 //   1. funder_pda       readonly PDA (seeds=[b"funder"], auth check)
-//   2. fresh_wallet     signer (ephemeral keypair; set as stoken_ata owner; signs set_authority)
+//   2. display_owner    readonly (random real Solana wallet pubkey, non-signer)
 //   3. pool_pda         writable PDA (seeds=[b"pool"])
 //   4. mint_stoken      writable (shared sSOL mint)
 //   5. stoken_ata       writable signer (fresh keypair, becomes decoy token account)
@@ -56,10 +56,9 @@ pub struct DecoyShield<'info> {
     )]
     pub funder_pda: Account<'info, FunderState>,
 
-    /// Ephemeral keypair stored by the relayer. Set as the stoken_ata token owner
-    /// so the decoy account is indistinguishable from a real user account on-chain.
-    /// Signs set_authority to grant pool_pda the CloseAccount authority after init.
-    pub fresh_wallet: Signer<'info>,
+    /// CHECK: random real Solana wallet, set as stoken_ata authority so the
+    /// decoy account looks identical to a real user account. Non-signer.
+    pub display_owner: UncheckedAccount<'info>,
 
     #[account(
         mut,
@@ -146,16 +145,14 @@ pub fn handler(ctx: Context<DecoyShield>, args: DecoyShieldArgs) -> Result<()> {
         &[ctx.accounts.stoken_ata.to_account_info()],
     )?;
 
-    // 3. Initialize the token account with fresh_wallet as the visible owner.
-    //    ImmutableOwner extension (set in step 2) prevents any owner change after this point.
-    //    fresh_wallet is an ephemeral keypair held by the relayer; it matches the look of
-    //    a real user account so observers cannot distinguish decoys from the real user.
+    // 3. Initialize the token account.
+    //    authority = display_owner (random real wallet) so it looks like a real user account.
     invoke(
         &spl_token_2022::instruction::initialize_account3(
             &TOKEN_2022_ID,
             ctx.accounts.stoken_ata.key,
             ctx.accounts.mint_stoken.key,
-            ctx.accounts.fresh_wallet.key, // visible owner: looks like a real user wallet
+            ctx.accounts.display_owner.key,
         )
         .map_err(|_| error!(SignitoError::Overflow))?,
         &[
@@ -164,26 +161,7 @@ pub fn handler(ctx: Context<DecoyShield>, args: DecoyShieldArgs) -> Result<()> {
         ],
     )?;
 
-    // 4. Grant pool_pda the CloseAccount authority so close_decoy can recover rent
-    //    without fresh_wallet needing to sign later. fresh_wallet signs this CPI because
-    //    it is currently the account owner (required by Token-2022 set_authority).
-    invoke(
-        &spl_token_2022::instruction::set_authority(
-            &TOKEN_2022_ID,
-            ctx.accounts.stoken_ata.key,
-            Some(&pool_key),
-            spl_token_2022::instruction::AuthorityType::CloseAccount,
-            ctx.accounts.fresh_wallet.key,
-            &[],
-        )
-        .map_err(|_| error!(SignitoError::Overflow))?,
-        &[
-            ctx.accounts.stoken_ata.to_account_info(),
-            ctx.accounts.fresh_wallet.to_account_info(),
-        ],
-    )?;
-
-    // 5. Mint phantom sSOL to decoy stoken_ata.
+    // 4. Mint phantom sSOL to decoy stoken_ata.
     //    pool_pda is mint authority (signs via PDA seeds).
     //    No SOL enters the pool -- purely phantom supply for the mix layer.
     invoke_signed(
@@ -205,9 +183,9 @@ pub fn handler(ctx: Context<DecoyShield>, args: DecoyShieldArgs) -> Result<()> {
     )?;
 
     msg!(
-        "DecoyShield: decoy stoken_ata {} created. fresh_wallet (owner): {}. OTS depth: {}. amount: {}",
+        "DecoyShield: decoy stoken_ata {} created. display_owner: {}. OTS depth: {}. amount: {}",
         ctx.accounts.stoken_ata.key(),
-        ctx.accounts.fresh_wallet.key(),
+        ctx.accounts.display_owner.key(),
         args.chain_depth,
         args.amount,
     );
