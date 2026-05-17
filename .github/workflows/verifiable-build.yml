@@ -53,7 +53,7 @@ jobs:
             CZBvErdLT8HL2iJS9NrRn7PhdeFWKNcMmvweEPsSbAAX \
             --keypair /tmp/deployer.json \
             --url "$RPC_URL" \
-            --with-compute-unit-price 50000
+            
           rm /tmp/deployer.json
 
       - name: Trigger OtterSec verification
