@@ -56,7 +56,7 @@ pub mod signito_vault {
 
     // Legacy single-TX private transfer: burn sSOL, pool sends SOL to recipient in same TX.
     // Kept for backward compatibility. Use burn_and_queue + process_queue for new flows.
-    pub fn private_send(ctx: Context<PrivateSend>, args: PrivateSendArgs) -> Result<()> {
+    pub fn private_send<'info>(ctx: Context<'_, '_, '_, 'info, PrivateSend<'info>>, args: PrivateSendArgs) -> Result<()> {
         instructions::private_send::handler(ctx, args)
     }
 
@@ -94,7 +94,8 @@ pub mod signito_vault {
 
     // TX1: OTS-verified sSOL burn. Signed by ephemeral fresh_wallet (funded by FunderPDA).
     // No recipient on-chain. Recipient submitted off-chain to relayer after this TX confirms.
-    pub fn burn_and_queue(ctx: Context<BurnAndQueue>, args: BurnAndQueueArgs) -> Result<()> {
+    // remaining_accounts: optional decoy stoken_ata[] burned in the same instruction.
+    pub fn burn_and_queue<'info>(ctx: Context<'_, '_, '_, 'info, BurnAndQueue<'info>>, args: BurnAndQueueArgs) -> Result<()> {
         instructions::burn_and_queue::handler(ctx, args)
     }
 
