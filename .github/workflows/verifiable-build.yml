@@ -16,15 +16,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build with verifiable Docker image
+      - name: Build with pinned OtterSec verifiable image
         run: |
-          docker pull solanafoundation/solana-verifiable-build:2.2.1
+          docker pull solanafoundation/solana-verifiable-build@sha256:1ec3341e04bc52e99b6f26f3c41d58e6c48e3a30cb92b32571dc2aa29e2acc95
           mkdir -p programs/target/deploy
           docker run --rm \
-            -v "$(pwd)/programs:/workspace" \
+            -v "$(pwd):/workspace" \
             -w /workspace \
-            solanafoundation/solana-verifiable-build:2.2.1 \
-            cargo build-sbf --manifest-path signito-vault/Cargo.toml
+            solanafoundation/solana-verifiable-build@sha256:1ec3341e04bc52e99b6f26f3c41d58e6c48e3a30cb92b32571dc2aa29e2acc95 \
+            cargo build-sbf --manifest-path programs/signito-vault/Cargo.toml
           sha256sum programs/target/deploy/signito_vault.so
           echo "executable_hash=$(sha256sum programs/target/deploy/signito_vault.so | cut -d' ' -f1)" >> $GITHUB_ENV
 
